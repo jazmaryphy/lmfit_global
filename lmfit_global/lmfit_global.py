@@ -1,113 +1,134 @@
 # %%
-import re
-import sys
 import copy
 import logging
 import inspect
 import operator
-import textwrap
-import itertools
 import numpy as np
 import functools as ft
-
-# --- IMPORT SOME UTILS FROM GLOBUTILS
-from globutils import (
-    get_reducer, 
-    propagate_err, 
-    alphanumeric_sort,
-    getfloat_key, 
-    getfloat_attr, 
-    gformat,
-    r2_score_util,
-)
+from dataclasses import dataclass, field
+from typing import Callable, Dict, Iterable, List, Optional, Any
 
 # %%
-# --- Configure logging once, ideally at the start of your program ---
-format='%(message)s'   # only show the message itself
-format='%(levelname)s | %(message)s'
-format='%(levelname)s: %(message)s'
-# format='%(asctime)s | %(levelname)s | %(message)s'
-# format='%(asctime)s | %(levelname)s | %(name)s | %(funcName)s | %(message)s'
-datefmt=None
-# datefmt='%Y-%m-%d %H:%M:%S'
-logging.basicConfig(
-    level=logging.INFO,
-    format=format,
-    datefmt=datefmt,
+from util.parameters import normalize_parameter_specs, _UNSET
+from util.reporting import (
+    wrap_expr,
+    build_expr,
+    pretty_expr,
+    lmfit_report,
+    r_squared_safe, 
+    pretty_print_params,
+    get_default_logger
 )
-logger = logging.getLogger(__name__)
-
-# # --- Example: log CPU count ---
-# CPU_COUNT = os.cpu_count()
-# logger.info(f'The number of CPUs: {CPU_COUNT}')
+from util.plotting import (
+    # pretty_plot,
+    # get_pretty_axarray,
+    # plot_from_fitdata,
+    FitPlotter
+)
+from util.utils import(
+    parse_xrange
+)
 
 # %%
 # --- The package lmfit is a MUST
 try:
     import lmfit
-except ImportError:
-    msg =  f'lmfit is required but not installed. Please install it with `pip install lmfit`...'
-    logger.error(msg)
-    raise ImportError(msg)
+except Exception as exc:  # pragma: no cover - runtime dependency
+    raise ImportError("lmfit is required. Install with `pip install lmfit`") from exc
 
-try:
-    import matplotlib 
-    _HAS_MATPLOTLIB = True
-except Exception:
-    _HAS_MATPLOTLIB = False
+# %%
+_VALID_CONNECTORS = {
+    '+': operator.add,
+    '-': operator.sub,
+    '*': operator.mul,
+    '/': operator.truediv,
+}
+
+
+# _ALLOWED_HINT_KEYS = {
+#     "value", "vary", 
+#     "min", "max", 
+#     "expr", "brute_step"
+#     }
+
+_LMFIT_INIT_PARAMETER_DEFAULTS = {
+            'value': -np.inf, 'vary': True,
+            'min': -np.inf, 'max': +np.inf,
+            'expr': None, 'brute_step': None
+        }
+
+_ALLOWED_NUMERIC = (int, float)
+
+
+
+@dataclass
+class ModelSpec:
+    func: Callable
+    init_params: Dict[str, dict]
+    func_kws: Dict[str, object] = field(default_factory=dict)
+
+
+@dataclass
+class FitData:
+    x_data: np.ndarray
+    y_data: np.ndarray
+    x_model: np.ndarray
+    y_init: np.ndarray
+    y_fit: np.ndarray | None
+    resid_init: np.ndarray
+    resid_fit: np.ndarray | None
+    components: Optional[
+        Dict[int, Dict[str, Dict[str, np.ndarray]]]
+    ] = None
+
+    # ---- derived properties ----
+
+    @property
+    def has_fit(self) -> bool:
+        return self.y_fit is not None
+
+    @property
+    def has_components(self) -> bool:
+        return self.components is not None
+
+    @property
+    def is_multicomponent(self) -> bool:
+        return self.has_components and any(self.components.values())
+
+    @property
+    def n_datasets(self) -> int:
+        return len(self.components) if self.has_components else 1
     
-try:
-    import numdifftools 
-    HAS_NUMDIFFTOOLS = True
-except ImportError:
-    HAS_NUMDIFFTOOLS = False
+    @property
+    def is_multidataset(self) -> bool:
+        return self.n_datasets > 1
+
+    @property
+    def component_names(self) -> list[str]:
+        if not self.has_components:
+            return []
+        names = set()
+        for comps in self.components.values():
+            names.update(comps.keys())
+        return sorted(names)
 
 
-try:
-    from tqdm import tqdm
-    _HAS_TQDM = True
-except Exception:
-    _HAS_TQDM = False
 
-
-try:
-    from sklearn.metrics import r2_score as rsq
-except ImportError:
-    from globutils import r2_score_util as rsq
-
-try:
-    from sklearn.metrics import r2_score
-except ImportError:
-    r2_score = None
-
-
-def _ensureMatplotlib(function):
-    if _HAS_MATPLOTLIB:
-        @ft.wraps(function)
-        def wrapper(*args, **kws):
-            return function(*args, **kws)
-        return wrapper
-
-    def no_op(*args, **kwargs):
-        print('matplotlib module is required for plotting the results')
-    return no_op
-
-# %%
-
-
-# %%
 class LmfitGlobal:
-    _valid_connectors = ('+', '-', '*', '/')
-    _valid_connectors_dict = {
-        '+': operator.add,
-        '-': operator.sub,
-        '*': operator.mul,
-        '/': operator.truediv,
-    }
+    """_summary_
+    """
+
 
 
     @staticmethod
-    def evaluate_function(func, x, params, prefix, i, func_kws=None):
+    def evaluate_function(
+        func: Callable, 
+        x: np.ndarray, 
+        params: lmfit.Parameters, 
+        prefix: str, 
+        i: int, 
+        func_kws=None
+        ) -> np.ndarray:
         """Evaluate a single function with parameters from lmfit and `func` keyward arguments (if any).
 
         Args:
@@ -144,15 +165,14 @@ class LmfitGlobal:
 
         return func(x, **kwargs)
     
-    
-    ### apply_operators  # --- OLD NAME ---
+
     @staticmethod
-    def reduce_with_operators(items, ops, operator_map):
+    def reduce_to_composite(items: list[Any], ops: list[str], operator_map: dict):
         """Reduce a sequence of items into a composite using operators.
 
         Args:
-            items (list): Sequence of items to combine.
-            ops (list of str): Operators of length len(items)-1.
+            items (list[Any]): Sequence of items to combine.
+            ops (list[str]): Operators of length len(items)-1.
             operator_map (dict): Mapping of operator symbols to functions (e.g. {'+': operator.add}).
 
         Returns:
@@ -165,1700 +185,1122 @@ class LmfitGlobal:
             )
         return obj
     
-
-    # @staticmethod
-    # def _format_callable(func):
-    #     """Return a string like 'func(arg1, arg2, ...)' for a callable."""
-    #     sig = inspect.signature(func)
-    #     args = ', '.join(sig.parameters.keys())
-    #     return f'{func.__name__}({args})'
-
-
     @staticmethod
-    def build_expression(funcs, operators):
-        """Build a human-readable expression string from functions and operators.
-
-        Args:
-            funcs (list): list of callable functions to describe 
-                (e.g., lmfit.Model.func or any callable).
-            operators (list of str): Operators ('+', '-', '*', '/') of length len(funcs)-1.
-
-        Returns:
-            expr (str): String representation of the composite function with arguments.
+    def format_list_of_str(list_of_str: list[str]):
         """
-        # if len(operators) != len(funcs) - 1:
-        #     raise ValueError('operators must have length len(funcs)-1')
-
-        def _format_callable(func):
-            """Return a string like 'func(arg1, arg2, ...)' for a callable."""
-            sig = inspect.signature(func)
-            args = ', '.join(sig.parameters.keys())
-            return f'{func.__name__}({args})'
-    
-        parts = []
-        for func, op in itertools.zip_longest(funcs, operators, fillvalue=''):
-            parts.append(_format_callable(func))
-            if op:
-                parts.append(op)
-
-        return ' '.join(parts)
-
-    @staticmethod
-    def pretty_expr(expr, line_style="#", width=80):
-        """Log a boxed expression using logger.info(), similar to print_in_box() above.
-
-        Args:
-            expr (str): The expression string to display.
-            line_style (str, optional):  Character(s) used for the box border default to '#'.
-            width (int, optional): Maximum width of the box default to 80.
+        Format iterable of list_of_str as:
+        'a'
+        'a' & 'b'
+        'a', 'b' & 'c'
         """
-        # Wrap text to fit inside the box
-        wrapped = textwrap.wrap(expr, width=width - 4)
+        list_of_str = list(list_of_str)
+        if not list_of_str:
+            return ""
 
-        # Determine box width
-        box_width = max(len(line) for line in wrapped) + 4
+        quoted = [f"'{n}'" for n in list_of_str]
 
-        # Top border
-        logger.info(line_style * box_width)
-
-        # Middle lines
-        for line in wrapped:
-            logger.info(f"{line_style} {line.ljust(box_width - 4)} {line_style}")
-
-        # Bottom border
-        logger.info(line_style * box_width)
-
-   
-    @staticmethod
-    def correl_table(params):
-        """Return a printable correlation table for a Parameters object."""
-        varnames = [vname for vname in params if params[vname].vary]
-        nwid = max(8, max([len(vname) for vname in varnames])) + 1
-
-        def sfmt(a):
-            return f" {a:{nwid}s}"
-
-        def ffmt(a):
-            return sfmt(f"{a:+.4f}")
-
-        title = ['', sfmt('Variable')]
-        title.extend([sfmt(vname) for vname in varnames])
-
-        title = '|'.join(title) + '|'
-        bar = [''] + ['-'*(nwid+1) for i in range(len(varnames)+1)] + ['']
-        bar = '+'.join(bar)
-
-        buff = [bar, title, bar]
-
-        for vname, par in params.items():
-            if not par.vary:
-                continue
-            line = ['', sfmt(vname)]
-            for vother in varnames:
-                if vother == vname:
-                    line.append(ffmt(1))
-                elif vother in par.correl:
-                    line.append(ffmt(par.correl[vother]))
-                else:
-                    line.append('unknown')
-            buff.append('|'.join(line) + '|')
-        buff.append(bar)
-        return '\n'.join(buff)
-
-
-    @staticmethod
-    def lmfit_report(
-            inpars, 
-            r2_dict=None,
-            modelpars=None, 
-            show_correl=True, 
-            min_correl=0.1,
-            sort_pars=False, 
-            correl_mode='list'
-            ):
-        """Generate a report of the fitting results.
-
-        The report contains the best-fit values for the parameters and their
-        uncertainties and correlations.
-
-        Args:
-            inpars (lmfit.Parameters): Input Parameters from fit or MinimizerResult returned from a fit.
-            r2_dict (dict, optional): Dictionary of calculated coefficient of determinations.
-            modelpars (lmfit.Parameters, optional): Known Model Parameters.
-            show_correl (bool, optional): Whether to show list of sorted correlations (default is True).
-            min_correl (float, optional): Smallest correlation in absolute value to show (default is 0.1).
-            sort_pars (bool or callable, optional): Whether to show parameter names sorted in alphanumerical order. 
-                If False (default), then the parameters will be listed in the order they were added to the Parameters 
-                dictionary. If callable, then this (one argument) function is used to extract a comparison key from each list element.
-            correl_mode ({'list', table'} str, optional): Mode for how to show correlations. Can be either 'list' (default) to show a 
-                sorted (if ``sort_pars`` is True) list of correlation values, or 'table' to show a complete, formatted table of correlations.
-
-        Returns:
-            str: Multi-line text of fit report.
-        """
-        def correl_table(params):
-            """Return a printable correlation table for a Parameters object."""
-            varnames = [vname for vname in params if params[vname].vary]
-            nwid = max(8, max([len(vname) for vname in varnames])) + 1
-
-            def sfmt(a):
-                return f" {a:{nwid}s}"
-
-            def ffmt(a):
-                return sfmt(f"{a:+.4f}")
-
-            title = ['', sfmt('Variable')]
-            title.extend([sfmt(vname) for vname in varnames])
-
-            title = '|'.join(title) + '|'
-            bar = [''] + ['-'*(nwid+1) for i in range(len(varnames)+1)] + ['']
-            bar = '+'.join(bar)
-
-            buff = [bar, title, bar]
-
-            for vname, par in params.items():
-                if not par.vary:
-                    continue
-                line = ['', sfmt(vname)]
-                for vother in varnames:
-                    if vother == vname:
-                        line.append(ffmt(1))
-                    elif vother in par.correl:
-                        line.append(ffmt(par.correl[vother]))
-                    else:
-                        line.append('unknown')
-                buff.append('|'.join(line) + '|')
-            buff.append(bar)
-            return '\n'.join(buff)
-    
-        inpars = copy.deepcopy(inpars) # MAKE OWN COPY
-        
-        if isinstance(inpars, lmfit.Parameters):
-            result, params = None, inpars
-        if hasattr(inpars, 'params'):
-            result = inpars
-            params = inpars.params
-
-
-        if sort_pars:
-            if callable(sort_pars):
-                key = sort_pars
-            else:
-                key = alphanumeric_sort
-            parnames = sorted(params, key=key)
+        if len(quoted) == 1:
+            return quoted[0]
+        elif len(quoted) == 2:
+            return " & ".join(quoted)
         else:
-            # dict.keys() returns a KeysView in py3, and they're indexed
-            # further down
-            parnames = list(params.keys())
+            return ", ".join(quoted[:-1]) + " & " + quoted[-1]
 
-        if r2_dict is None:
-            r2_dict = {}
 
-        buff = []
-        add = buff.append
-        namelen = max(len(n) for n in parnames)
-        if result is not None:
-            add("[[Fit Statistics]]")
-            add(f"    # fitting method   = {result.method}")
-            add(f"    # function evals   = {getfloat_attr(result, 'nfev')}")
-            add(f"    # data points      = {getfloat_attr(result, 'ndata')}")
-            add(f"    # variables        = {getfloat_attr(result, 'nvarys')}")
-            add(f"    chi-square         = {getfloat_attr(result, 'chisqr')}")
-            add(f"    reduced chi-square = {getfloat_attr(result, 'redchi')}")
-            add(f"    Akaike info crit   = {getfloat_attr(result, 'aic')}")
-            add(f"    Bayesian info crit = {getfloat_attr(result, 'bic')}")
-            if hasattr(result, 'rsquared'):
-                add(f"    R-squared          = {getfloat_attr(result, 'rsquared')}")
-            else:  ## ADD THIS PART
-                mean_val = r2_dict.get('mean', None)
-                weighted_val = r2_dict.get('weighted', None)
-                # Only proceed if at least one value is not None
-                if mean_val is not None and weighted_val is not None:
-                    tol = 1e-12
-                    if abs(mean_val - weighted_val) < tol:
-                        add(f"    R-squared          = {getfloat_key(r2_dict, 'mean')}")
-                    else:
-                        add(f"    R-squared (mean)   = {getfloat_key(r2_dict, 'mean')}")
-                        add(f"    R-squared (weight) = {getfloat_key(r2_dict, 'weighted')}")
-                elif mean_val is not None:
-                    add(f"    R-squared (mean)   = {getfloat_key(r2_dict, 'mean')}")
-                elif weighted_val is not None:
-                    # add(f"    R-squared (weighted) = {getfloat_key(r2_dict, 'weighted')}")
-                    # add(f"    R-squared (var)    = {getfloat_key(r2_dict, 'weighted')}")
-                    add(f"    R-squared (weight) = {getfloat_key(r2_dict, 'weighted')}")
-                # else: both None → do nothing (no add)
-                
-            if not result.errorbars:
-                add("##  Warning: uncertainties could not be estimated:")
-                if result.method in ('leastsq', 'least_squares') or HAS_NUMDIFFTOOLS:
-                    parnames_varying = [par for par in result.params
-                                        if result.params[par].vary]
-                    for name in parnames_varying:
-                        par = params[name]
-                        space = ' '*(namelen-len(name))
-                        if par.init_value and np.allclose(par.value, par.init_value):
-                            add(f'    {name}:{space}  at initial value')
-                        if (np.allclose(par.value, par.min) or np.allclose(par.value, par.max)):
-                            add(f'    {name}:{space}  at boundary')
-                else:
-                    add("    this fitting method does not natively calculate uncertainties")
-                    add("    and numdifftools is not installed for lmfit to do this. Use")
-                    add("    `pip install numdifftools` for lmfit to estimate uncertainties")
-                    add("    with this fitting method.")
-
-        add("[[Variables]]")
-        for name in parnames:
-            par = params[name]
-            space = ' '*(namelen-len(name))
-            nout = f"{name}:{space}"
-            inval = '(init = ?)'
-            if par.init_value is not None:
-                inval = f'(init = {par.init_value:.7g})'
-            if modelpars is not None and name in modelpars:
-                inval = f'{inval}, model_value = {modelpars[name].value:.7g}'
-            try:
-                sval = gformat(par.value)
-            except (TypeError, ValueError):
-                sval = ' Non Numeric Value?'
-            if par.stderr is not None:
-                serr = gformat(par.stderr)
-                try:
-                    spercent = f'({abs(par.stderr/par.value):.2%})'
-                except ZeroDivisionError:
-                    spercent = ''
-                sval = f'{sval} +/-{serr} {spercent}'
-
-            if par.vary:
-                add(f"    {nout} {sval} {inval}")
-            elif par.expr is not None:
-                add(f"    {nout} {sval} == '{par.expr}'")
-            else:
-                add(f"    {nout} {par.value: .7g} (fixed)")
-
-        if show_correl and correl_mode.startswith('tab'):
-            add('[[Correlations]] ')
-            for line in correl_table(params).split('\n'):
-                buff.append('  %s' % line)
-        elif show_correl:
-            correls = {}
-            for i, name in enumerate(parnames):
-                par = params[name]
-                if not par.vary:
-                    continue
-                if hasattr(par, 'correl') and par.correl is not None:
-                    for name2 in parnames[i+1:]:
-                        if (name != name2 and name2 in par.correl and
-                                abs(par.correl[name2]) > min_correl):
-                            correls[f"{name}, {name2}"] = par.correl[name2]
-
-            sort_correl = sorted(correls.items(), key=lambda it: abs(it[1]))
-            sort_correl.reverse()
-            if len(sort_correl) > 0:
-                add('[[Correlations]] (unreported correlations are < '
-                    f'{min_correl:.3f})')
-                maxlen = max(len(k) for k in list(correls.keys()))
-            for name, val in sort_correl:
-                lspace = max(0, maxlen - len(name))
-                add(f"    C({name}){(' '*30)[:lspace]} = {val:+.4f}")
-        return '\n'.join(buff)
-    
- 
-    @staticmethod
-    def wrap_model_reprstring(expr, width=80, indent=4):
-        """Wrap a composite model expression string at operators for readability.
+    def __init__(
+        self, 
+        items: dict, 
+        independent_vars: Optional[List[str]] = None,
+        nan_policy: str = 'raise', 
+        method: str = 'leastsq', 
+        logger: logging.Logger | None = None,
+        **fit_kws
+    ):
+        """_summary_
 
         Args:
-            expr (str): The composite model expression string.
-            width (int, optional): Max line width (default is 80).
-            indent (int, optional): Spaces to indent continuation lines (default is 4)
-
-        Returns:
-            str: Wrapped expression string.
-        """
-        tokens = re.split(r'(\+|\-|\*|/)', expr)  # split but keep operators
-        lines = []
-        current = ""
-
-        for tok in tokens:
-            if len(current) + len(tok) + 1 > width:
-                lines.append(current.rstrip())
-                current = " " * indent + tok
-            else:
-                current += tok
-        if current:
-            lines.append(current.rstrip())
-
-        return "\n".join(lines)
-
-
-
-    def __init__(self, items, independent_vars=None, nan_policy='raise', method='leastsq', **fit_kws):
-        """
-        Create lmfit-global function from user-supplied model function.
-
-        Args:
-            items (dict) : Dictionary defining the model problem. Here is the how it is define
-                - 'data' : dict
-                    Defines the experimental data to be fitted, formatted as, 
-                        {'xy': np.column_stack([x, y_1, y_2, ...]), 'xrange': None}
-
-                    * 'xy' a 2-D array with columns [x, y_1, y_2, ...].
-                    * 'xrange' can specify a domain restriction (or None) for fitting range [NOT SURE HERE].
-
-                - 'functions' : dict
-                    Defines the theoretical model functions and how they are combined.
-                    Must contain:
-                        'theory' : list of dicts
-                            Each dict specifies one function with:
-                                - 'func_name' : callable
-                                    The model function (e.g., gaussian, exponential).
-                                - 'init_params' : dict
-                                    Initial parameter guesses. Each parameter is itself
-                                    a dict with keys like 'value', 'vary', 'min', 'max'.
-                                - 'fixed_opts' : dict
-                                    Non-fit options (e.g., constants).
-                                - 'func_kws' : dict 
-                                    Additional keyword arguments to pass to model function `'func_name'`.
-                                    Default to {}
-
-                        'theory_connectors' : list of str
-                            Binary operators ('+', '-', '*', '/') defining how to
-                            combine the functions in 'theory'. Length must be one less
-                            than the number of theory functions. For example:
-                                ['+', '*'] means theory[0] + theory[1] * theory[2].
-
-            independent_vars (:obj:`list` of :obj:`str`, optional) :  Explicit names of independent variables 
-                for the model `function` (default is None).
-            nan_policy ({'raise', 'propagate', 'omit'}, optional) : How to handle NaN or missing values in the data.
-                - `'raise'` : raise a `ValueError` (default)
-                - `'propagate'` : do nothing
-                - `'omit'` : drop missing data
-            method (str, optional) : Fitting method available in lmfit (default is 'leastsq')
-            prefix (str, optional) : Prefix used for the model. Default will be created with index [NOT SURE NEEDED].
-            **fit_kws (dict, optional) : Additional options to pass to the minimizer being used..
-
-        Notes:
-        - 
-        - 
-        - 
+            items (dict): _description_
+            independent_vars (Optional[List[str]], optional): _description_. Defaults to None.
+            nan_policy (str, optional): _description_. Defaults to 'raise'.
+            method (str, optional): _description_. Defaults to 'leastsq'.
         """
         # --- Make own copy to avoid overwriting of internal elements ---
         items = copy.deepcopy(items)
-        # for key, val in kws.items():
-        #     setattr(self, key, val)
- 
         self.items = items
         self.method = method
         self.fit_kws = fit_kws
         self.nan_policy = nan_policy
         self.independent_vars = independent_vars
+ 
+        self.logger = logger or get_default_logger(self.__class__.__name__)
 
-        # --- Define Data attributes ---
-        self.data_x, self.data_y = None, None
-        self.xdat, self.ydat = None, None
-        self.data_xrange = None 
-        self.has_nan = False
+        # internal state
+        self.models: List[lmfit.Model] = []
+        self.model_specs: List[ModelSpec] = []
+        self.prefixes: List[str] = []
+        self.func_signatures: Dict[Callable, inspect.Signature] = {}
+        self.lmfit_composite_model: List[lmfit.model.CompositeModel] = []
+        self.is_multicomponent: bool = False
 
-        # --- Define Function attributes ---
-        self.nc = None
-        self._prefix_on = False
-        self.theory_connectors = None
+        # cached evaluation
+        self.y_ini: Optional[np.ndarray] = None
+        self.y_sim: Optional[np.ndarray] = None
+        self.result: Optional[lmfit.MinimizerResult] = None
+        self.fit_success: bool = False
+        self.rsquared: Optional[float] = None
+        self.fitdata: FitData | None = None
+
         
-        # --- Validate inputs ---
-        self._validate_data()
-        self._validate_functions()
-        self._validate_nan_policy()
+        # parse and validate data
+        # self._parse_data()
+        # self._parse_functions()
+        # self._pretty_expr()
+
+        # build parameters and composite model
+        # self.logger.info("LmfitGlobal initialized...")
+        # self.init_params = lmfit.Parameters()
+        # self._create_lmfit_models()
+        # self._build_lmfit_composite_model()
+        # self._init_parameters()
+        # self._eval()
+
+        # lifecycle
+        self._parse_inputs()
+        self._build_lmfit_backend()
 
 
-        # --- Containers to build model ---
+    #     # Ensure at least one handler exists (otherwise nothing prints!)
+    #     if not self.logger.handlers:
+    #         self._setup_default_handler()
+
+    # def _setup_default_handler(self):
+    #     """Attach a simple console handler if none exists."""
+    #     handler = logging.StreamHandler()
+    #     handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    #     self.logger.addHandler(handler)
+
+
+    def _log_err(self, msg, exc=ValueError):
+        self.logger.error(msg+' ...')
+        raise exc(msg)
+
+    def _parse_inputs(self):
+        """Parse and validate input data and theory definitions."""
+        self.logger.info("Parsing inputs...")
+        self._parse_data()
+        self._parse_functions()
+        self._pretty_expr()
+        
+    def _build_lmfit_backend(self):
+        """Build lmfit models, composite model, and parameters."""
+        self.logger.info("Building lmfit backend...")
+        # reset backend state
         self.models = []
         self.prefixes = []
-        self.func_kws_all = []   # list of dict: Additional keyword arguments to pass to model function (IF ANY).
-        self.functions_used = []
-        self.function_names = []
-        self.composite_model = []
-        # self.fixed_options_all = [] # REMOVED (replaced with self.kws_all)
-        self.independent_vars_all = []
-        
+        self.lmfit_composite_model = None
 
-        # --- Build initial parameters ---
-        self.initial_params = lmfit.Parameters()
+        self.init_params = lmfit.Parameters()
+        self._create_lmfit_models()
+        self._build_lmfit_composite_model()
+        self._init_parameters()
 
+        # snapshot pristine parameters (IMPORTANT)
+        self._init_params_template = self.init_params.copy()
 
-        # --- Initiate fitting program ---
-        self.rss = []
-        self.r2 = {}
-        self.r2_dict = {}
-        self.r2_raw = None
-        self.r2_mean = None
-        self.r2_weighted = None
-        self.fit_success = False
-        # self._eval()
-        # logger.info(f'Evaluating lmfit fitting/minimization protocols for the functions...')
-        # logger.info(f'Setting lmfit fitting/minimization protocols for the functions...')
-
-        # --- setup: create model and initialize parameters ---
-        self.setup()
-        
-        # --- print model functions expressions ---
-        self.funcs_expr = self.build_expression(funcs=self.functions_used, operators=self.theory_connectors)
-        self.funcs_expr = f'y(x;) = {self.funcs_expr}'
-        self.pretty_expr(self.funcs_expr, line_style='#', width=80)  # LOGGER VERSION
-        # print_in_box(self.funcs_expr, line_style='#', width=80)      # PRINT VERSION
-
-
-
-    def setup(self):
-        """Prepare models and initialize parameters for fitting."""
-        self._create_models()
-        self._initialize_parameters()
-        self._build_composite_model()
+        # initial evaluation (optional but useful)
         self._eval()
-        # self._eval_init()
-        # logger.info(f'Evaluating lmfit fitting/minimization protocols for the functions...')
-        logger.info(f'Setting lmfit fitting/minimization protocols for the functions...')
 
-    # -------------------------------
-    # Properties
-    # -------------------------------
-    @property
-    def prefix_on(self):
-        return self._prefix_on
-
-    @prefix_on.setter
-    def prefix_on(self, value):
-        if not isinstance(value, bool):
-            raise TypeError("prefix_on must be a boolean")
-        self._prefix_on = value
-
-    def __repr__(self):
-        return (
-            f'LmfitGlobal(N={self.N}, ny={self.ny}, nc={self.nc}, '
-            f'nan_policy="{self.nan_policy}", prefix_on={self._prefix_on}, '
-            f'expr="{self.funcs_expr}") '
-            )
-    
-    
-    # -------------------------------
-    # Validation helpers
-    # -------------------------------
-    def _validate_data(self):
-        """Extract and validate data info."""
-        data_dict = self.items.get('data', None)
-        if data_dict is None:
-            msg=f'Raw data needed for fit'
-            logger.error(msg)
-            raise ValueError(msg)
-
-        self.data_dict = data_dict
-        self.data_xy = self.data_dict.get('xy', None)
-        if self.data_xy is None:
-            msg=f'Raw x-y data needed for fit'
-            logger.error(msg)
-            raise ValueError(msg)
-
-        arr = np.asarray(self.data_xy)
-        if arr.ndim != 2:
-            msg=f'We expect x-y data to be a 2D array'
-            logger.error(msg)
-            raise ValueError(msg)
-
-        self.data_x = arr[:, 0]
-        self.data_y = arr[:, 1:]
-        # --- extract number of dataset ny and length N of each dataset
-        self.N, self.ny = self.data_y.shape
-
-        # ---- Fit range [NOT SURE II SHOULD COME HERE! PERHAPS IN FUNCTION] ----
-        self.data_xrange = self.data_dict.get('xrange', None)
-        self.xdat, self.ydat = self.data_x, self.data_y
-
-        # if self.data_xrange:
-        #     if not isinstance(self.data_xrange, (list, tuple)) or len(self.data_xrange) != 2:
-        #         raise ValueError("`data_xrange` must be a list/tuple of two numbers")
-        #     minval, maxval = self.data_xrange
-        #     idx = np.where((self.data_x >= minval) & (self.data_x <= maxval))[0]
-        #     self.xdat = np.take(self.data_x, idx)
-        #     self.ydat = np.take(self.data_y, idx, axis=0)
-
-        if self.data_xrange is not None:
-            if not self.data_xrange:  # catches [], (), '', 0, False
-                msg=f'`data_xrange` cannot be empty'
-                logger.error(msg)
-                raise ValueError(msg)
-            if (
-                not isinstance(self.data_xrange, (list, tuple)) or len(self.data_xrange)!=2 or 
-                not all(isinstance(xr, (int, float)) for xr in self.data_xrange)
-            ):
-                msg=f'`data_xrange` must be a list/tuple of two numbers, got: {self.data_xrange}'
-                logger.error(msg) 
-                raise ValueError(msg) 
-        if self.data_xrange:
-            minval, maxval = self.data_xrange
-            idx = np.where((self.data_x >= minval) & (self.data_x <= maxval))[0]
-            # ---- Safety check: ensure we found at least one index ---
-            if idx.size == 0:
-                msg = (
-                    f'No data points found in the specified range {self.data_xrange}. '
-                    'Please check your input range or data.'
-                )
-                logger.error(msg)
-                raise ValueError(msg)
-            # --- Apply the index selection
-            self.xdat = np.take(self.data_x, idx)          # the range data we are interested to fit
-            self.ydat = np.take(self.data_y, idx, axis=0)  # the range data we are interested to fit
-        logger.info(f'Validating data...')
+    def rebuild(self):
+        """Rebuild lmfit models and parameters without reparsing inputs."""
+        self.logger.info("Rebuilding lmfit backend...")
+        self._build_lmfit_backend()
 
 
-    def _validate_functions(self):
-        """Extract and validate theory/functions info."""
-        func_dict = self.items.get('functions', None)
-        if func_dict is None:
-            msg=f'Theory/Functions needed for fit'
-            logger.error(msg)
-            raise ValueError(msg)
 
-        self.func_dict = func_dict
-        self.theory_dict = self.func_dict.get('theory', None)
-        if self.theory_dict is None:
-            msg=f'Fit Functions (`theory`) are required for fitting'
-            logger.error(msg)
-            raise ValueError(msg)
+    # -----------------------------
+    # Parsing and validation
+    # -----------------------------   
+    def set_xrange(
+        self,
+        xmin: Optional[float] = None,
+        xmax: Optional[float] = None,
+        *,
+        clip: bool = True,
+        rebuild: bool = True,
+    ) -> None:
+        """
+        Set or update the fitting x-range.
 
-        self.nc = len(self.theory_dict)
-        self.theory_connectors = self.func_dict.get('theory_connectors', None)
+        Args:
+            xmin, xmax (float | None): Range bounds
+            rebuild (bool): Whether to rebuild lmfit backend (default True)
+        """
+        xmin, xmax = parse_xrange(
+            (xmin, xmax),
+            xdata=self.x_data,
+            clip=clip,
+            logger=self.logger,
+        )
 
-        if self.nc > 1:
-            self._prefix_on = True
-            if self.theory_connectors is None:
-                msg=f'Missing `theory_connectors` list — required for multiple theory functions'
-                logger.error(msg)
-                raise ValueError(msg)
-            if not isinstance(self.theory_connectors, list):
-                msg=f'`theory_connectors` must be a list'
-                logger.error(msg)
-                raise TypeError(msg)
-            if not all(isinstance(op, str) and op in self._valid_connectors for op in self.theory_connectors):
-                msg=f'`theory_connectors` must contain only {self._valid_connectors}'
-                logger.error(msg)
-                raise ValueError(msg)
-            if len(self.theory_connectors) != self.nc - 1:
-                msg=f'Expected {self.nc - 1} connectors for {self.nc} theory functions'
-                logger.error(msg)
-                raise ValueError(msg)
-            # Precompile operator functions
-            self.connectors = [self._valid_connectors_dict[op] for op in self.theory_connectors]
-        else:
-            self._prefix_on = False
-            msg=f'`theory_connectors` ignored - ONLY <{self.nc}> function provided.'
-            logger.warning(msg)
-            msg=f"`theory_connectors` = <{self.theory_connectors}> was reset to []"
-            logger.warning(msg)
-            self.theory_connectors = []
-            # if self.theory_connectors not in (None, [], ()):
-            #     raise ValueError('`theory_connectors` must be None or empty when only one theory function is provided')
-        logger.info(f'Validating functions...')
-            
+        self.logger.info(f"Updating data xrange to [{xmin}, {xmax}]")
 
-    def _validate_nan_policy(self):
-        """Check NaN Policy and Handle accordingly"""
-        # -- Check of the the raw data to fit has NaNs
+        self.xmin, self.xmax = xmin, xmax
+        self.xr = (self.xmin, self.xmax)
+        self._apply_xrange(self.xmin, self.xmax)
+        self.N, self.ny = self.ydat.shape
+        if self.xr != (None, None):
+            self.logger.info(f"UPDATE XRANGE: N={self.N} points each for user supplied xrange [{self.xmin}, {self.xmax}] ...")
+
+        # Invalidate old fit
+        self.fit_success = False
+        self.result = None
+        self.fitdata = None
+
+        if rebuild:
+            self._build_lmfit_backend()
+
+
+    def _apply_xrange(self, xmin: Optional[float] = None, xmax: Optional[float] = None) -> None:
+        if xmin is None and xmax is None:
+            self.xdat = self.x_data
+            self.ydat = self.y_data
+            return
+
+        xmin = self.x_data.min() if xmin is None else xmin
+        xmax = self.x_data.max() if xmax is None else xmax
+
+        mask = (self.x_data >= self.xmin) & (self.x_data <= self.xmax)
+
+        if not np.any(mask):
+            self._log_err("No data points in requested xrange")
+
+        self.xdat = self.x_data[mask]
+        self.ydat = self.y_data[mask, :]
+
+
+    def _parse_raw_data(self):
+        data = self.items.get('data') or {}
+        xy = data.get('xy')
+        if xy is None:
+            self._log_err("data.xy is missing")
+        xy = np.asarray(xy)
+
+        if xy.ndim != 2 or xy.shape[1] < 2:
+            self._log_err("data.xy must be 2D with shape (N, 1+ny), i.e columns as: [x, y1, y2, ...]")
+
+        self.x_data = xy[:, 0]
+        self.y_data = xy[:, 1:]
+        self.N, self.ny = self.y_data.shape
+        self.logger.info(f"Detected {self.ny} dataset(s) with N={self.N} points each...")
+
+
+    def _parse_data(self):
+        self.logger.info("Parsing input data...")
+        self._parse_raw_data()
+
+        # Optional fitting range
+        data = self.items.get('data') or {}
+        xr = data.get("xrange")
+        xmin, xmax = parse_xrange(
+            xr,
+            xdata=self.x_data,
+            clip=True,
+            logger=self.logger,
+        )
+        self.xmin, self.xmax = xmin, xmax
+        self.xr = (self.xmin, self.xmax)
+        self._apply_xrange(self.xmin, self.xmax)
+        self.N, self.ny = self.ydat.shape
+        if self.xr != (None, None):
+            self.logger.info(f"XRANGE: N={self.N} points each for user supplied xrange [{self.xmin}, {self.xmax}] ...")
+
+
+        # NaN handling
         self.has_nan = np.isnan(self.ydat).any()
-        # -- Raise error if NaNs are found and policy is 'raise'
-        if self.has_nan and self.nan_policy == 'raise':
-            msg = (
-                'Detected NaN values in `ydat`, but `nan_policy="raise"` is active.\n'
-                'Please clean your data or choose a different `nan_policy`:\n'
-                '  - "omit"      -> automatically exclude NaN-containing points from the fit\n'
-                '  - "propagate" -> allow NaNs to pass through (may result in NaN outputs)\n'
-                '  - "raise"     -> (default) stop and alert if any NaNs are present'
+        if self.has_nan:
+            if self.nan_policy == 'raise':
+                self._log_err("Nans detected but nan_policy='raise'... choose {'omit' or 'propagate'}")
+            self.logger.warning(f"NaNs detected in data; nan_policy='{self.nan_policy}' ...")
+            # msg = (
+            #     'Detected NaN values in `ydat`, but `nan_policy="raise"` is active.\n'
+            #     'Please clean your data or choose a different `nan_policy`:\n'
+            #     '  - "omit"      -> automatically exclude NaN-containing points from the fit\n'
+            #     '  - "propagate" -> allow NaNs to pass through (may result in NaN outputs)\n'
+            #     '  - "raise"     -> (default) stop and alert if any NaNs are present'
+            # )
+
+        # self.logger.info("Data parsing COMPLETED...")
+        self.logger.info("Parsing input data COMPLETED...")
+
+
+    def _parse_functions(self):
+        self.logger.info("Parsing function models...")
+
+        def _unexpected(keys, allowed):
+            return set(keys) - set(allowed)
+
+        funcs = self.items.get('functions') or {}
+        theory = funcs.get('theory')
+        if not isinstance(theory, list) or not theory:
+            self._log_err("`functions.theory` must be a non-empty list")
+
+        self.model_specs = []
+        self.func_signatures = {}
+
+        # -----------------------------------------------------
+        # Parse each model specification
+        # -----------------------------------------------------
+        for i, entry in enumerate(theory):
+            self.logger.debug(f"Processing model #{i}: {entry}")
+
+            func = entry.get("func_name")
+            if not callable(func):
+                self._log_err(f"model[{i}] `func_name` must be callable", TypeError)
+
+            sig = inspect.signature(func)
+            self.func_signatures[func] = sig
+            func_args = list(sig.parameters.keys())[1:]  # skip x
+
+            self.logger.debug(
+                f"Model #{i} function: {func.__name__} "
+                f"signature=({', '.join(sig.parameters.keys())})"
             )
-            logger.error(msg)
-            raise ValueError(msg)
-        logger.info(f'Validating nan policy...')
 
-
-    # -------------------------------
-    # Creating Model(s) Functions
-    # -------------------------------
-    def _create_models(self):
-        """
-        Create lmfit.Model objects for each theory entry.
-
-        Builds a list of models, their function names, prefixes, and independent
-        variables. Parameter hints are applied from `init_params`, and fixed options
-        `func_kws` are stored separately for later use.
-        """
-        # # --- Reset containers to avoid stale state ---
-        # self.functions_used = []
-        # self.function_names = []
-        # self.prefixes = []
-        # self.independent_vars_all = []
-        # self.fixed_options_all = []
-        # self.models = []
-
-        for i, entry in enumerate(self.theory_dict):
-            func = entry.get('func_name', None)
-            if func is None or not callable(func):
-                msg=f'Missing or invalid `"func_name"` in theory_dict[{i}] — must be a callable.'
-                logger.error(msg)
-                raise ValueError(msg)
-            self.functions_used.append(func)
-            self.function_names.append(func.__name__)
-
-            init_params = entry.get('init_params', None)
-            if init_params is None:
-                msg=f'Missing `"init_params"` for function `{func.__name__}`'
-                logger.error(msg)
-                raise ValueError(msg)
-
+            # ----------------------------------
+            # init_params & func_kws validation
+            # ----------------------------------
+            init_params = entry.get("init_params")
             if not isinstance(init_params, dict):
-                msg = f'`init_params` for function `{func.__name__}` must be a dict.'
-                logger.error(msg)
-                raise TypeError(msg)
+                self._log_err(f"model[{i}] `init_params` must be a dict")
 
-            # fixed_opts = entry.get('fixed_opts', {}) # REMOVED (replaced with func_kws)
-            func_kws = entry.get('func_kws', {})
+            func_kws = entry.get("func_kws", {})
+            if not isinstance(func_kws, dict):
+                self._log_err(f"model[{i}] `func_kws` must be a dict")
 
-            # --- Get ordered function parameters ---
-            fn_pars = list(inspect.signature(func).parameters.keys())
-            xpar = fn_pars[:1]  # first argument is EXPECTED to 'x'
-             # --- Tell lmfit which arguments are independent variables like `fixed_opts` ---
-            # indep_vars = xpar + list(fixed_opts.keys()) # REMOVED (replaced with func_kws)
-            indep_vars = xpar + list(func_kws.keys())
+            ua = _unexpected(init_params, func_args)
+            uk = _unexpected(func_kws, func_args)
 
-            # --- Warn if init_params contain unexpected arguments ---
-            unexpected = set(init_params.keys()) - set(fn_pars)
-            if unexpected:
-                # logger.warning(
-                #     f'Function `{func.__name__}`: "init_params" contain unexpected arguments {unexpected}. '
-                #     f'These are not in the function signature {fn_pars}.'
-                # )
-                msg = (
-                    f'Function `{func.__name__}`: "init_params" contain unexpected arguments {unexpected}.\n'
-                    f'These are not in the function signature: {fn_pars}.'
+            if ua:
+                self._log_err(f"Function `{func.__name__}`: unexpected `init_params`={ua}")
+            if uk:
+                self._log_err(f"Function `{func.__name__}`: unexpected `func_kws`={uk}")
+
+            # Store into unified ModelSpec
+            self.model_specs.append(
+                ModelSpec(func=func, init_params=init_params, func_kws=func_kws)
+            )
+
+        self.nc = len(self.model_specs)
+        self.is_multicomponent = self.nc > 1
+
+        kind = "multi-component" if self.is_multicomponent else "single-component"
+        self.logger.info(f"{self.nc} model component(s) detected — {kind} fit...")
+
+        # -----------------------------------------------------
+        # Parse theory connectors (+, -, *, /)
+        # -----------------------------------------------------
+        self.theory_connectors = funcs.get("theory_connectors") or []
+
+        if self.is_multicomponent:
+            if len(self.theory_connectors) != self.nc - 1:
+                self._log_err("`theory_connectors` length must be n_models - 1")
+
+            allowed = set(_VALID_CONNECTORS.keys())
+            for op in self.theory_connectors:
+                if op not in allowed:
+                    self._log_err(f"Unsupported connector '{op}'. Allowed: {allowed}")
+
+            self.logger.info(
+                f"The model connectors used: [{' '.join(self.theory_connectors)}]"
+            )
+        else:
+            # Single-component model
+            if self.theory_connectors:
+                self.logger.warning(
+                    "theory_connectors were provided but only one model component "
+                    "is defined; connectors will be ignored."
                 )
-                logger.error(msg)
-                raise ValueError(msg)
+            self.theory_connectors = []
+        self.logger.info("Parsing function models COMPLETED...")
 
-            # --- Check func_kws consistency ---
-            unexpected_kws = set(func_kws.keys()) - set(fn_pars)
-            if unexpected_kws:
-                msg = (
-                    f'Function `{func.__name__}`: "func_kws" contain unexpected keyword arguments {unexpected_kws}.\n'
-                    f'These are not in the function signature: {fn_pars}.'
-                )
-                logger.error(msg)
-                raise ValueError(msg)
 
-            # --- Prefix for multi-component models ----
-            prefix = f'c{i}_' if self.prefix_on else f''
-            self.prefixes.append(prefix)
 
-            # --- Build lmfit.Model ---
-            # model = lmfit.Model(func, prefix=prefix)
-            model = lmfit.Model(func, independent_vars=indep_vars, prefix=prefix)
-            self.independent_vars_all.append(indep_vars)
+    # @property
+    # def nc(self) -> int:
+    #     return len(self.model_specs)
 
-            # # --- Apply parameter hints for fit parameters ---
-            # for pname, hint in init_params.items():
-            #     model.set_param_hint(pname, **hint)
+    # @property
+    # def is_multicomponent(self) -> bool:
+    #     return self.nc > 1
 
-            # --- Allowed keys for lmfit set_param_hint ---
-            valid_keys = {"value", "vary", "min", "max", "expr", "brute_step"}
+    @property
+    def is_multidataset(self) -> bool:
+        return self.ny > 1
 
+    # -----------------------------
+    # Model construction and params
+    # -----------------------------
+    def _create_lmfit_models(self):
+        self.models = []
+        self.prefixes = []
+        for i, spec in enumerate(self.model_specs):
+            prefix = f'c{i}_' if len(self.model_specs) > 1 else ''
+            indep_vars = [list(self.func_signatures[spec.func].parameters.keys())[0]] + list(spec.func_kws.keys())
+            model = lmfit.Model(spec.func, prefix=prefix, independent_vars=indep_vars)
+            model.func_kws = spec.func_kws
             # --- Apply parameter hints for fit parameters ---
-            for pname, hint in init_params.items():
-                if not isinstance(hint, dict):
-                    msg = f"Parameter hint for '{pname}' must be a dict, got {type(hint)}"
-                    logger.error(msg)
-                    raise TypeError(msg)
-
-                # Empty dict is fine (lmfit will use defaults)
-                if hint:
-                    unexpected_keys = set(hint.keys()) - valid_keys
-                    if unexpected_keys:
-                        msg = (
-                            f'Function `{func.__name__}`: parameter "{pname}" has invalid hint keys {unexpected_keys}.\n'
-                            f'Allowed keys are: {sorted(valid_keys)}.'
-                            # f'Allowed keys are: {valid_keys}.'
-                        )
-                        logger.error(msg)
-                        raise ValueError(msg)
-
-                # Safe to apply
+            for pname, hint in spec.init_params.items():
                 model.set_param_hint(pname, **hint)
-
-            # --- Store the fixed options so we can pass them later ---
-            model.func_kws = func_kws # NOT A GOOD IDEA
-            # Store fixed options separately
-            # self.fixed_options_all.append(fixed_opts) # REMOVED (replaced with self.func_kws_all)
-            self.func_kws_all.append(func_kws)
             self.models.append(model)
-        logger.info(f'Creating lmfit.Models for the functions...')
+            self.prefixes.append(prefix)
+        self.logger.info(f'Creating lmfit.Models for the models(s) function(s)...')
 
 
-    def _initialize_parameters(self):
+    def _build_lmfit_composite_model(self):
+        """Build a composite lmfit model imilar to lmfit.model.CompositeModel 
+        from parsed models and connectors.
         """
-        Initialize lmfit.Parameters for all datasets and models.
+        # self.logger.info("Building composite model...")
+        self.logger.info("Building lmfit CompositeModel...")
 
-        Each dataset gets its own parameter set, with names suffixed by the dataset index.
+        if not self.models:
+            self._log_err("No models available to build composite model", RuntimeError)
+
+        # --------------------------------------------------
+        # Build composite model
+        # --------------------------------------------------
+        try:
+            self.lmfit_composite_model = self.reduce_to_composite(
+                items=self.models,
+                ops=self.theory_connectors,
+                operator_map=_VALID_CONNECTORS
+            )
+        except Exception:
+            self._log_err("Composite model construction failed", RuntimeError)
+
+        # self.logger.info("Composite model built successfully")
+        self.logger.info("CompositeModel built successfully...")
+
+
+    @property
+    def model(self):
+        """Public accessor for the built lmfit model."""
+        return self.lmfit_composite_model
+        
+
+    @property
+    def component_names(self) -> list[str]:
+        return [m.prefix.rstrip('_') for m in self.models]
+
+
+    def _init_parameters(self):
+        self.init_params = lmfit.Parameters()
+        for iy in range(self.ny):
+            for model in self.models:
+                pset = model.make_params()
+                for pname, p in pset.items():
+                    name = f'{pname}_{iy}'
+                    # copy relevant attributes
+                    self.init_params.add(
+                        name,
+                        value=p.value,
+                        vary=p.vary,
+                        min=p.min if p.min is not None else -np.inf,
+                        max=p.max if p.max is not None else +np.inf,
+                        expr=p.expr if p.expr is not None else None,
+                        brute_step=p.brute_step if p.brute_step is not None else None,
+
+                        )
+        self.logger.info('Initialized parameters...')
+
+
+    def reset_params(self, rebuild: bool = True):
         """
-        # # --- Rest parameter
-        # self.initial_params = lmfit.Parameters()
+        Reset lmfit parameters to their initial (post-build) state.
 
-        for iy in range(self.ny):  # loop over datasets
-            for model in self.models:  # loop over models
-                initpar = model.make_params()
-                for name, par_dict in initpar.items():
-                    pname = f"{name}_{iy}"  # dataset-specific suffix
-                    self.initial_params.add(
-                        pname,
-                        value=par_dict.value,
-                        vary=par_dict.vary,
-                        min=par_dict.min,
-                        max=par_dict.max,
+        This removes all expressions, ties, and user modifications and restores
+        values, bounds, and vary flags as defined by init_params hints.
+
+        Args:
+            rebuild (bool, optional):  If True (default), rebuild the lmfit backend after reset.
+        """
+        if not hasattr(self, "_init_params_template"):
+            raise RuntimeError(
+                "Initial parameter template not found. "
+                "Cannot reset parameters before backend build."
+            )
+
+        self.logger.info("Resetting parameters to initial state...")
+
+        # Restore from template
+        self.init_params = self._init_params_template.copy()
+
+        # Clear fit results and cached evaluations
+        self.result = None
+        self.y_sim = None
+        self.y_ini = None
+
+        if rebuild:
+            self.logger.info("Rebuilding lmfit backend after parameter reset...")
+            self._build_lmfit_backend()
+
+    # -----------------------------
+    # Parameter utilities (unified)
+    # -----------------------------    
+    def _set_par_attr(
+        self,
+        par,
+        *,
+        attr: str,
+        value: Any,
+        overwrite_expr: bool = False,
+    ):
+        """
+        Safely set a single lmfit.Parameter attribute with validation.
+
+        Args:
+            par (lmfit.Parameter): Target parameter object.
+            attr (str):  Parameter attribute to update. One of:
+                {'value', 'min', 'max', 'vary', 'expr', 'brute_step'}.
+            value (Any): Value to assign. If `_UNSET`, the attribute is left unchanged.
+            overwrite_expr (bool, optional): Whether to overwrite an existing expression 
+                (default: False).
+
+        Raises:
+            TypeError: If value has an invalid type.
+            ValueError: If attempting to overwrite an expression or if NaN is provided.
+        """
+        if value is _UNSET:
+            return
+
+        # ---------------- expr ----------------
+        if attr == "expr":
+            if value is not None and not isinstance(value, str):
+                raise TypeError(
+                    f"expr must be str or None for parameter '{par.name}', "
+                    f"got {type(value).__name__}"
+                )
+
+            if isinstance(value, str) and not value.strip():
+                raise ValueError(
+                    f"expr for parameter '{par.name}' must not be empty"
+                )
+
+            if par.expr is not None and value is not None and not overwrite_expr:
+                raise ValueError(
+                    f"Parameter '{par.name}' already has expr='{par.expr}'. "
+                    "Use overwrite_expr=True to override."
+                )
+
+            old = par.expr
+            par.expr = value
+            self.logger.info(
+                f"Set 'expr' for parameter '{par.name}' with: expr={old!r} to expr={value!r} ..."
+            )
+            return
+            return
+
+        # ---------------- vary ----------------
+        if attr == "vary":
+            if not isinstance(value, bool):
+                raise TypeError(
+                    f"'vary' must be bool for parameter '{par.name}', "
+                    f"got {type(value).__name__}"
+                )
+            old = par.vary
+            if old != value:
+                par.vary = value
+                self.logger.info(
+                    f"Set 'vary' for parameter '{par.name}' with: vary={old!r} to vary={value!r} ..."
+                )
+            return
+
+        # ---------------- numeric ----------------
+        if attr in {"value", "min", "max", "brute_step"}:
+            if not isinstance(value, _ALLOWED_NUMERIC):
+                raise TypeError(
+                    f"'{attr}' must be int or float for parameter '{par.name}', "
+                    f"got {type(value).__name__}"
+                )
+            if np.isnan(value):
+                raise ValueError(
+                    f"NaN is not allowed for '{par.name}.{attr}'"
+                )
+
+            old = getattr(par, attr)
+            if old != value:
+                setattr(par, attr, value)
+                self.logger.info(
+                    f"Set '{attr}' for parameter '{par.name}' with: {attr}={old!r} to {attr}={value!r} ..."
+                )
+            return
+
+        # ---------------- unknown ----------------
+        raise KeyError(
+            f"Unknown parameter attribute '{attr}' for parameter '{par.name}'"
+        )
+
+
+    def _apply_par_mapping(
+        self,
+        mapping: dict,
+        attr: str,
+        *,
+        overwrite_expr: bool = False
+    ):
+        """
+        Apply a single attribute update to multiple parameters.
+        """
+        for name, value in mapping.items():
+            if name not in self.init_params:
+                self.logger.warning(
+                    f"Parameter '{name}' not found; skipping..."
+                )
+                continue
+
+            par = self.init_params[name]
+            self._set_par_attr(
+                par,
+                attr=attr,
+                value=value,
+                overwrite_expr=overwrite_expr
+            )
+
+
+    def add_par(
+        self,
+        *parlist: Iterable
+    ):
+        """
+        Add new lmfit parameter(s).
+
+        Args:
+            *parlist (Iterable): Parameter specifications accepted by
+                `normalize_parameter_specs`.
+
+        Defaults are taken from _LMFIT_INIT_PARAMETER_DEFAULTS.
+        """
+        pardict = normalize_parameter_specs(*parlist)
+
+        for name, spec in pardict.items():
+            if name in self.init_params:
+                self.logger.warning(f"Parameter '{name}' already exists; skipping...")
+                continue
+
+            final = {}
+            for key, default in _LMFIT_INIT_PARAMETER_DEFAULTS.items():
+                val = spec.get(key, _UNSET)
+                final[key] = default if val is _UNSET else val
+
+            self.init_params.add(name, **final)
+            self.logger.info(f"Added parameter '{name}' with: {final} ...")
+
+
+    def constrain(
+        self, 
+        target: str, 
+        expr: str, 
+        *, 
+        overwrite_expr: bool = False
+    ):
+        """Constrain an existing parameter...
+
+        Args:
+            target (str): Parameter to be constrained, must exist in ``self.init_params``.
+            expr (str): lmfit-compatible expression defining the constraint.
+            overwrite_expr (bool, optional, keyword-only): If False (default), an error is raised 
+                when the target parameter already has an expression defined. Set to True to explicitly 
+                overwrite an existing constraint.. Defaults to False.
+
+        Raises:
+            ValueError: If the target parameter does not exist.
+            ValueError: If the target parameter already has an expression and ``overwrite_expr=False``.
+        """
+        if target not in self.init_params:
+            raise ValueError(f"Parameter '{target}' not found")
+
+        par = self.init_params[target]
+
+        if par.expr is not None and not overwrite_expr:
+            raise ValueError(
+                f"Parameter '{target}' already has expr='{par.expr}'. "
+                "Use overwrite_expr=True to override."
+            )
+
+        # Assign lmfit expression
+        par.expr = expr
+
+        self.logger.info(f"Constrained '{target}' with: expr='{expr}' ...")
+
+
+    def set_expr(
+        self,
+        mapping: dict[str, str | None],
+        *,
+        overwrite_expr: bool = False
+    ):
+        """set lmfit expressions to one or more existing parameters.
+
+        Args:
+            mapping (Dict[str, str | None]): Mapping of parameter names to lmfit expression strings.
+                Example:
+                    {
+                        "sigma_1": "sigma_0", 
+                        "amp_2": "2 * amp_0"
+                    }
+            overwrite_expr (bool, optional): If False (default), an error is raised 
+                when the target parameter already has an expression defined. Set to True to explicitly 
+                overwrite an existing constraint.. Defaults to False.
+
+        Raises:
+            ValueError: If a parameter already has an expression and ``overwrite_expr=False``.
+        """
+        self._apply_par_mapping(
+            mapping,
+            attr="expr",
+            overwrite_expr=overwrite_expr
+        )
+
+
+    def set_value(self, mapping: dict[str, float]):
+        """Set parameter values."""
+        if not isinstance(mapping, dict):
+            raise TypeError(
+                "set_value() expects a dict: {parameter_name: value}"
+            )
+        self._apply_par_mapping(mapping, attr="value")
+
+
+    def set_min(self, mapping: dict[str, float]):
+        """Set parameter lower bounds."""
+        if not isinstance(mapping, dict):
+            raise TypeError(
+                "set_min() expects a dict: {parameter_name: value}"
+            )
+        self._apply_par_mapping(mapping, attr="min")
+
+
+    def set_max(self, mapping: dict[str, float]):
+        """Set parameter upper bounds."""
+        if not isinstance(mapping, dict):
+            raise TypeError(
+                "set_max() expects a dict: {parameter_name: value}"
+            )
+        self._apply_par_mapping(mapping, attr="max")
+
+
+    def set_brute_step(self, mapping: dict[str, float]):
+        """Set parameter brute_step."""
+        if not isinstance(mapping, dict):
+            raise TypeError(
+                "set_brute_step() expects a dict: {parameter_name: value}"
+            )
+        self._apply_par_mapping(mapping, attr="brute_step")
+
+
+    def set_vary(self, mapping: dict[str, bool]):
+        """Enable or disable parameter variation."""
+        if not isinstance(mapping, dict):
+            raise TypeError(
+                "set_vary() expects a dict: {parameter_name: value}"
+            )
+        self._apply_par_mapping(mapping, attr="vary")
+
+
+    def set_par_attrs(
+        self,
+        mapping: dict[str, dict],
+        *,
+        overwrite_expr: bool = False
+    ):
+        """Set multiple attributes per parameter.
+
+        Args:
+            mapping (Dict[str, str | None]): Mapping of parameter names to lmfit expression strings.
+                Example:
+                {
+                    "amp_0":   {"value": 0.1, "min": 0, "max":+np.inf, "vary":True},
+                    "sigma_0": {"value": 0.5, "min": -np.inf},
+                    "sigma_1": "sigma_0", 
+                    "amp_1":   {"expr": "2 * amp_0"},
+                    "amp_2":   {"value":0, "vary":False},
+                }
+            overwrite_expr (bool, optional): If False (default), an error is raised 
+                when the target parameter already has an expression defined. Set to True to explicitly 
+                overwrite an existing constraint.. Defaults to False.
+
+        Raises:
+            ValueError: If a parameter already has an expression and ``overwrite_expr=False``.
+        """
+        if not isinstance(mapping, dict):
+            raise TypeError(
+                "mapping expected to a a dict: {parameter_name: value, }"
+            )
+        for name, spec in mapping.items():
+            if name not in self.init_params:
+                self.logger.warning(f"Parameter '{name}' not found; skipping...")
+                continue
+
+            par = self.init_params[name]
+            for attr, val in spec.items():
+                self._set_par_attr(
+                    par,
+                    attr,
+                    val,
+                    overwrite_expr=overwrite_expr
+                )
+
+    def set_params_attrs(
+        self,
+        mapping: dict[str, dict],
+        *,
+        overwrite_expr: bool = False
+    ):
+        """Alias for set_par_attrs."""
+        self.set_par_attrs(
+                mapping=mapping,
+                overwrite_expr=overwrite_expr
+            )    
+
+    def set_params(
+        self,
+        mapping: dict[str, dict],
+        *,
+        overwrite_expr: bool = False
+    ):
+        """Alias for set_par_attrs."""
+        self.set_par_attrs(
+                mapping=mapping,
+                overwrite_expr=overwrite_expr
+            )     
+
+    def update_par(
+        self,
+        *parlist: Iterable,
+        overwrite_expr: bool = False
+    ):
+        """
+        Update existing lmfit parameters.
+
+        Args:
+            *parlist (Iterable): Parameter specifications accepted by
+                `normalize_parameter_specs`.
+
+            overwrite_expr (bool, optional): If False (default), refuse to overwrite an existing
+                parameter expression.
+
+        Raises:
+            ValueError: If a parameter already has an expression and ``overwrite_expr=False``.
+        """
+        pardict = normalize_parameter_specs(*parlist)
+
+        for name, spec in pardict.items():
+            if name not in self.init_params:
+                raise ValueError(
+                    f"Parameter '{name}' does not exist. "
+                    "Use add_par() to create it."
+                )
+
+            par = self.init_params[name]
+            updates = {}
+
+            for key, val in spec.items():
+                if val is _UNSET:
+                    continue  # preserve existing value
+                    # print(key, val)
+
+                if key == "expr":
+                    if par.expr is not None and not overwrite_expr:
+                        raise ValueError(
+                            f"Parameter '{name}' already has expr='{par.expr}'. "
+                            "Use overwrite_expr=True to override."
+                        )
+                    updates['expr'] = val
+                else:
+                    updates[key] = val
+
+            if updates:
+                par.set(**updates)
+                self.logger.info(f"Updated parameter '{name}' with: {updates} ...")
+
+
+    def update_params(
+        self,
+        *parlist: Iterable,
+        overwrite_expr: bool = False            
+    ):
+        """Alias for update_par."""
+        self.update_par(
+                *parlist,
+                overwrite_expr=overwrite_expr
+            )
+                        
+
+    def remove_par(
+        self,
+        *parlist: Iterable,
+        force: bool = False
+    ):
+        """
+        Remove parameter(s) from `self.init_params`.
+
+        Args:
+            *parlist (Iterable): Parameter names or objects accepted by
+                `normalize_parameter_specs`.
+
+            force (bool, optional): If False (default), refuse to remove parameters that are:
+                - referenced by other parameter expressions
+                If True, remove anyway and clear dependent expressions.
+
+        Raises:
+            ValueError: If a parameter is referenced by other parameters and force=False.
+        """
+        pardict = normalize_parameter_specs(*parlist)
+        names = list(pardict.keys())
+
+        for name in names:
+            if name not in self.init_params:
+                self.logger.warning(f"Parameter '{name}' not found; skipping...")
+                continue
+
+            # --- detect dependencies ---
+            dependents = [
+                p.name for p in self.init_params.values()
+                if p.expr is not None and name in p.expr
+            ]
+
+            if dependents and not force:
+                raise ValueError(
+                    f"Cannot remove parameter '{name}'; "
+                    f"used in expressions of {dependents}. "
+                    "Use force=True to override."
+                )
+
+            # --- force cleanup ---
+            if dependents:
+                for dep in dependents:
+                    self.logger.warning(
+                        f"Clearing expr of dependent parameter '{dep}' ..."
                     )
-        logger.info(f'Initializing lmfit.Parameters for the functions...')
-        # # --- print model functions expressions ---
-        # self.funcs_expr = self.build_expression(funcs=self.functions_used, operators=self.theory_connectors)
-        # self.funcs_expr = f'y(x;) = {self.funcs_expr}'
-        # print_in_box(self.funcs_expr, line_style='#', width=80)
+                    self.init_params[dep].expr = None
+
+            del self.init_params[name]
+            self.logger.info(f"Removed parameter '{name}' ...")
+
+
+    def remove_params(
+        self,
+        *parlist: Iterable,
+        force: bool = False
+    ):
+        """Alias for remove_par."""
+        self.remove_par(
+                *parlist,
+                force=force
+            )
+        
+
+    def _tie(
+        self, 
+        *parlist: Iterable, 
+        reference: Optional[str] = None, 
+        overwrite_expr: bool = False
+    ):
+        """
+        Tie parameters so they share a common reference parameter.
+
+        All parameters in `parlist` will be constrained to have the same
+        value as the reference parameter via lmfit expressions.
+
+        If `reference` is None, the first parameter in `parlist` is used
+        as the reference.
+
+        Args:
+            parlist (Iterable): Parameter specifications (names, lmfit.Parameter, etc.)
+            reference (str, optional): Name of the reference parameter.
+            overwrite_expr (bool, optional): if True, parameters with existing expressions will be overwritten.
+
+        Raises:
+            ValueError: If reference parameter not found in  ``init_params``.
+        """
+        pardict = normalize_parameter_specs(*parlist)
+        names = list(pardict.keys())
+
+        if not names:
+            raise ValueError("No parameter names supplied")
+
+        if reference is None:
+            reference = names[0]
+
+        if reference not in self.init_params:
+            raise ValueError(f"Reference parameter '{reference}' not found")
+
+        # Preserve reference vary flag
+        vary_flag = self.init_params[reference].vary
+
+        # Clear expression on reference
+        self.init_params[reference].expr = None
+
+        for name in names:
+            if name == reference:
+                continue
+            if name not in self.init_params:
+                self.logger.warning(f"Parameter '{name}' not found; skipping...")
+                continue
+            par = self.init_params[name]
+            # --- SAFETY CHECK ---
+            if par.expr is not None and not overwrite_expr:
+                raise ValueError(
+                    f"Parameter '{name}' already has expr='{par.expr}'. "
+                    "Refusing to overwrite. Use overwrite_expr=True to force."
+                )
+            # self.init_params[name].expr = reference
+            par.expr = reference
+        self.init_params[reference].set(vary=vary_flag)
+
+        fmt_names = self.format_list_of_str(names)
+        self.logger.info(f"Tied parameters: {fmt_names} to reference='{reference}' ...")
+
+
+    def tie(
+        self, 
+        *parlist: Iterable, 
+        reference: Optional[str] = None, 
+        overwrite_expr: bool = False            
+    ):
+        """Alias for _tie."""
+        self._tie(
+            *parlist,
+            reference=reference,
+            overwrite_expr=overwrite_expr
+        )
+
+
+    def set_global(
+        self, 
+        *parlist: Iterable, 
+        reference: Optional[str] = None, 
+        overwrite_expr: bool = False            
+    ):
+        """Alias for _tie."""
+        self._tie(
+            *parlist,
+            reference=reference,
+            overwrite_expr=overwrite_expr
+        )
+
+
+    def set_global_params(
+        self, 
+        *parlist: Iterable, 
+        reference: Optional[str] = None, 
+        overwrite_expr: bool = False            
+    ):
+        """Alias for _tie."""
+        self._tie(
+            *parlist,
+            reference=reference,
+            overwrite_expr=overwrite_expr
+        )
+
+
+    # -----------------------------
+    # Evaluation and residuals
+    # -----------------------------
+    def _evaluate_model(
+        self, 
+        model: lmfit.Model, 
+        x: np.ndarray, 
+        params: lmfit.Parameters, 
+        i: int
+    ) -> np.ndarray:
+        """Evaluate a single model function for a given dataset index `i`"""
+        # collect parameter values from params using model.prefix
+        prefix = model.prefix
+        # sig = self.func_signatures[model.func]  # NOT IDEAL WAY TO USE
+        sig = inspect.signature(model.func)
+        # build kwargs for function from params and model.func_kws
+        kwargs = {}
+        func_kw = dict(model.func_kws)  # constant kws
+        for name in list(sig.parameters.keys())[1:]:
+            param_key = f'{prefix}{name}_{i}' if prefix else f'{name}_{i}'
+            if param_key in params:
+                kwargs[name] = params[param_key].value
+            if name in func_kw:
+                kwargs[name] = func_kw[name]
+
+        return model.func(x, **kwargs)
     
 
-    def _build_composite_model(self):
-        """Build a composite similar to lmfit.CompositeModel from a list of models and operators
-        to connect the models in the list.
-        """
-        models = self.models
-        operators = self.theory_connectors
-        operator_map = self._valid_connectors_dict
-
-        self.composite_model = self.reduce_with_operators(
-            items=models, 
-            ops=operators, 
-            operator_map=operator_map
-            )
-
-
-    def _evaluate_models(self, xdat, params, i):
+    def _evaluate_models(self, x: np.ndarray, params: lmfit.Parameters, i: int) -> np.ndarray:
         """Evaluate all models for a given dataset index `i` and combine them
         using the theory connectors.
 
         Args:
-            xdat (array, list of floats): Array-like of x data, xdat.
+            x (array, list of floats): Array-like of x data, xdat.
             params (lmfit.Parameters): Parameter set containing values for all model components.
             i (int): Dataset index specifying which column of y-data to evaluate.
 
         Returns:
-        r (nd.array): The combined model output for the given dataset index,
+        results (nd.array): The combined model output for the given dataset index,
             constructed by applying the operators in `self.theory_connectors`
             to the individual model results.
         """
+        out = []
+        for model in self.models:
+            comps = self._evaluate_model(model, x, params, i)
+            out.append(comps)
 
-        results = []
-        models = self.models
-        operators = self.theory_connectors
-        operator_map = self._valid_connectors_dict
-        for midx, model in enumerate(models):
-            y = self.evaluate_function(
-                func=model.func,
-                x=xdat,
-                params=params,
-                # prefix=self.prefixes[midx],
-                prefix=model.prefix,       # cleaner
-                i=i,
-                # func_kws=self.func_kws_all[midx],
-                func_kws=model.func_kws,   # self-contained
-            )
-            results.append(y)
-
-        # Combine results using operators
-        r = self.reduce_with_operators(
-            items=results,
-            ops=operators, 
-            operator_map=operator_map
+        # Combine out using operators
+        results = self.reduce_to_composite(
+            items=out,
+            ops=self.theory_connectors, 
+            operator_map=_VALID_CONNECTORS
         )
-        return r
+        return results
     
-    # -------------------------------
-    # Parameters Helpers
-    # -------------------------------
-    def _set_global_params(self, *parlist):
-        """INTERNAL IMPLEMENTATIONS
-        Tie one or more parameters to a single master parameter, making them global (shared).
 
-        This method ties all indexed variants of a parameter (e.g. "sigma_0", "sigma_1", ...)
-        to a single master parameter. The master parameter retains its original `vary` flag
-        (free or fixed) as defined in `self.initial_params`. All dependent parameters are
-        set with `expr=master_name` so they share the master’s value.
-
-        Args:
-            *parlist (str | list[str] | lmfit.Parameter | lmfit.Parameters | sequence):
-                Parameter(s) to globalize. Supported forms include:
-                  - A single parameter name string (e.g. "sigma_0")
-                  - A list of parameter name strings
-                  - An `lmfit.Parameters` object (all keys will be globalized)
-                  - A sequence of `(name, Parameter)` tuples (e.g. `params.items()`)
-                  - A sequence of `Parameter` instances
-                  - Multiple arguments (e.g. `_set_global_params(p1, p2, "sigma_0")`)
-
-        Raises:
-            ValueError: If a supplied parameter name or master parameter is not found
-                        in `self.initial_params`.
-            TypeError: If `parlist` contains unsupported types.
-
-        Notes:
-            - The master parameter's `expr` is cleared to ensure independence.
-            - The maste's `vary` flag is restored to its original state after tying.
-            - If the master is fixed (`vary=False`), all tied parameters will also be fixed.
-            - Logging is used to inform about globalizing actions and warnings.
-
-        Examples:
-            >>> # Example 1: single string
-            >>> LmfitGlobal._set_global_params("sigma_0")
-
-            >>> # Example 2: list of strings
-            >>> LmfitGlobal._set_global_params(["center_1"])   # list of str
-            >>> LmfitGlobal._set_global_params(["center_1", "amplitude_0"])  # list of str
-        
-            >>> # Example 3: lmfit.Parameter object
-            >>> from lmfit import Parameter
-            >>> par1 = Parameter("sigma_0", 0.25)   # single par
-            >>> LmfitGlobal._set_global_params(par1)
-            >>> par1 = Parameter("sigma_0", 0.25)   # single par
-            >>> par2 = Parameter("center_0", 0.25)  # single par
-            >>> LmfitGlobal._set_global_params(par1, par2)
-
-            >>> # Example 4: lmfit.Parameters object
-            >>> from lmfit import Parameters
-            >>> params = Parameters()
-            >>> params.add("sigma_0", value=0.25, vary=True)
-            >>> params.add("sigma_1", value=0.25, vary=False)
-            >>> LmfitGlobal._set_global_params(params)
-
-            >>> # Example 5: sequence of Parameter instances
-            >>> from lmfit import Parameter
-            >>> p1 = Parameter("sigma_0", value=0.25, vary=True)
-            >>> p2 = Parameter("sigma_1", value=0.25, vary=False)
-            >>> LmfitGlobal._set_global_params([p1, p2])
-
-            >>> # Example 6: sequence of (name, Parameter) tuples
-            >>> LmfitGlobal._set_global_params(list(params.keys()))
-        """
-        # # --- normalize input into names ---
-        # names = []
-        # for par in parlist:
-        #     if isinstance(par, str):
-        #         names.append(par)
-        #     elif isinstance(par, lmfit.Parameters):
-        #         names.extend(list(par.keys()))
-        #     elif isinstance(par, lmfit.Parameter):
-        #         names.append(par.name)
-        #     elif isinstance(par, (list, tuple)):
-        #         for item in par:
-        #             if isinstance(item, str):
-        #                 names.append(item)
-        #             elif isinstance(item, tuple) and len(item) == 2 and isinstance(item[1], lmfit.Parameter):
-        #                 names.append(item[0])
-        #             elif isinstance(item, lmfit.Parameter):
-        #                 names.append(item.name)
-        #             else:
-        #                 msg = f'Unsupported item type in parlist: {type(item)}'
-        #                 logger.error(msg)
-        #                 raise TypeError(msg)
-        #     else:
-        #         msg = f'Unsupported parlist type: {type(par)}'
-        #         logger.error(msg)
-        #         raise TypeError(msg)
-        
-        # --- normalize input into names ---
-        names = []
-        for par in parlist:
-            if isinstance(par, str):
-                names.append(par)
-            elif isinstance(par, lmfit.Parameters):
-                names.extend(list(par.keys()))
-            elif isinstance(par, lmfit.Parameter):
-                names.append(par.name)
-            elif isinstance(par, tuple) and len(par) == 2 and isinstance(par[1], lmfit.Parameter):
-                names.append(par[0])
-            elif isinstance(par, (list, tuple)):
-                for item in par:
-                    if isinstance(item, str):
-                        names.append(item)
-                    elif isinstance(item, tuple) and len(item) == 2 and isinstance(item[1], lmfit.Parameter):
-                        names.append(item[0])
-                    elif isinstance(item, lmfit.Parameter):
-                        names.append(item.name)
-                    else:
-                        msg = f'Unsupported item type in parlist: {type(item)}'
-                        logger.error(msg)
-                        raise TypeError(msg)
-            else:
-                msg = f'Unsupported parlist type: {type(par)}'
-                logger.error(msg)
-                raise TypeError(msg)
-
-        # deduplicate
-        names = list(dict.fromkeys(names))
-
-        # --- process normalized names ---
-        for param_name in names:
-            if param_name not in self.initial_params and "_" not in param_name:
-                msg = f'The parameter "{param_name}" not found in "self.initial_params"...'
-                logger.error(msg)
-                raise ValueError(msg)
-
-            # parse prefix and index
-            if '_' in param_name:
-                parname, idx = param_name.rsplit('_', 1)
-                idx = int(idx)
-            else:
-                parname, idx = param_name, 0
-
-            master_name = f'{parname}_{idx}'
-            if master_name not in self.initial_params:
-                msg = f'The parameter "{master_name}" not found in "self.initial_params"...'
-                logger.error(msg)
-                raise ValueError(msg)
-
-            # ensure master is independent
-            self.initial_params[master_name].expr = None
-            flag = self.initial_params[master_name].vary
-
-            logger.info(f'The parameter "{master_name}" is shared with ALL "{parname}_*" parameters...')
-
-            # tie all other indices to master
-            indices = sorted(set(range(self.ny)) - {idx})
-            for i in indices:
-                pname = f"{parname}_{i}"
-                if pname in self.initial_params:
-                    self.initial_params[pname].expr = master_name
-
-            # restore master’s vary flag
-            self.initial_params[master_name].set(vary=flag)
-
-            if not flag:
-                logger.warning(
-                    f'The parameter "{master_name}" is fixed (vary=False)... '
-                    'ALL shared parameters will also be fixed...'
-                )
-
-
-    def _set_global_params_group(self, *parlist):
-        """
-        Tie all parameters in `parlist` (names, Parameter objects, or Parameters container)
-        to a single master parameter (the first one).
-        """
-        names = []
-
-        for par in parlist:
-            if isinstance(par, str):
-                names.append(par)
-            elif isinstance(par, lmfit.Parameter):
-                names.append(par.name)
-            elif isinstance(par, lmfit.Parameters):
-                names.extend(list(par.keys()))   # all keys from Parameters object
-            elif isinstance(par, (list, tuple)):
-                for item in par:
-                    if isinstance(item, str):
-                        names.append(item)
-                    elif isinstance(item, lmfit.Parameter):
-                        names.append(item.name)
-                    elif isinstance(item, tuple) and len(item) == 2 and isinstance(item[1], lmfit.Parameter):
-                        names.append(item[0])
-                    else:
-                        msg=f'Unsupported item type: {type(item)}'
-                        logger.error(msg)
-                        raise TypeError(msg)
-            else:
-                msg=f'Unsupported parlist type: {type(par)}'
-                logger.error(msg)
-                raise TypeError(msg)
-
-        if not names:
-            msg=f'No parameters provided'
-            logger.error(msg)
-            raise ValueError(msg)
-
-        # deduplicate
-        names = list(dict.fromkeys(names))
-        # pick master (first one)
-        master_name = names[0]
-        if master_name not in self.initial_params:
-            msg=f'Master parameter "{master_name}" not found'
-            logger.error(msg)
-            raise ValueError(msg)
-
-        # ensure master independent
-        self.initial_params[master_name].expr = None
-        flag = self.initial_params[master_name].vary
-
-        # # tie all others
-        # for pname in names[1:]:
-        #     if pname not in self.initial_params:
-        #         msg=f'Parameter "{pname}" not found'
-        #         logger.error(msg)
-        #         raise ValueError(msg)
-        #     self.initial_params[pname].expr = master_name
-
-        # # restore master vary flag
-        # self.initial_params[master_name].set(vary=flag)
-
-        if len(names) > 1:
-            # tie all others
-            for pname in names[1:]:
-                if pname not in self.initial_params:
-                    msg = f'Parameter "{pname}" not found'
-                    logger.error(msg)
-                    raise ValueError(msg)
-                self.initial_params[pname].expr = master_name
-
-            # restore master’s vary flag AFTER tying
-            self.initial_params[master_name].set(vary=flag)
-
-            if not flag:
-                logger.warning(
-                    f'The parameter "{master_name}" is fixed (vary=False)... '
-                    'ALL shared parameters will also be fixed...'
-                )
-        else:
-            # only one parameter, nothing to tie
-            self.initial_params[master_name].set(vary=flag)
-            logger.warning(f'Only one parameter "{master_name}" provided — no dependents to tie.')
-
-        logger.info(f'ALL parameters {names} are now globalized with master "{master_name}"...')
-
-
-    ### --- EXPERIMENTAL ---###
-    def _set_global_expr(self, *parlist, expr=None):
-        """
-        Tie parameters to user-defined expressions, optionally updating other attributes.
-
-        Args
-        ----
-        *parlist : sequence of str, lmfit.Parameter, lmfit.Parameters, tuple, dict, or list
-            Supported forms:
-            - String: "sigma_0" (expr=None, clears expression unless overridden by keyword)
-            - lmfit.Parameter: uses its .expr and other attributes if defined
-            - lmfit.Parameters: all keys included, with their attributes
-            - Tuple: ("sigma_0", "0.12 * sigma_1") or ("sigma_0", Parameter)
-            - Dict: {"name": "sigma_0", "expr": "0.12 * sigma_1", "value": 0.25}
-            - Dict-of-dicts: {"sigma_0": {"expr": "0.12 * sigma_1"}, "center_2": {"expr": "0.24 - sigma_0"}}
-            - List/tuple of any of the above
-
-        expr : str, dict, or list of str, optional
-            If provided:
-            - str: overrides the expression for all names in *parlist
-            - dict: mapping of {name: expr} to override selectively
-            - list of str: must match len(*parlist); assigns expressions in order
-
-        Raises
-        ------
-        ValueError
-            If a parameter name is not found in self.initial_params, or if expr list length mismatch.
-        TypeError
-            If unsupported input types are provided.
-        """
-        valid_keys = {"value", "vary", "min", "max", "expr", "brute_step"}
-        updates_map = {}
-
-        # --- normalize parlist into updates_map[name] = {attributes} ---
-        for par in parlist:
-            if isinstance(par, str):
-                updates_map[par] = {"expr": None}
-
-            elif isinstance(par, lmfit.Parameter):
-                updates = {}
-                for k in valid_keys:
-                    val = getattr(par, k, None)
-                    if val is not None:
-                        if k == "min" and val == -np.inf:
-                            continue
-                        if k == "max" and val == np.inf:
-                            continue
-                        updates[k] = val
-                updates_map[par.name] = updates
-
-            elif isinstance(par, lmfit.Parameters):
-                for name, p in par.items():
-                    updates = {}
-                    for k in valid_keys:
-                        val = getattr(p, k, None)
-                        if val is not None:
-                            if k == "min" and val == -np.inf:
-                                continue
-                            if k == "max" and val == np.inf:
-                                continue
-                            updates[k] = val
-                    updates_map[name] = updates
-
-            elif isinstance(par, dict):
-                if all(isinstance(v, dict) for v in par.values()):
-                    for name, attrs in par.items():
-                        updates = {k: v for k, v in attrs.items()
-                                if k in valid_keys and v is not None}
-                        updates_map[name] = updates
-                elif "name" in par:
-                    name = par["name"]
-                    updates = {k: v for k, v in par.items()
-                            if k in valid_keys and v is not None}
-                    updates_map[name] = updates
-                else:
-                    raise TypeError(f'Dict must be either {{name, expr}} or dict-of-dicts, got {par}')
-
-            elif isinstance(par, tuple):
-                if len(par) == 2 and isinstance(par[1], lmfit.Parameter):
-                    updates_map[par[0]] = {"expr": par[1].expr}
-                elif len(par) == 2 and isinstance(par[1], str):
-                    updates_map[par[0]] = {"expr": par[1]}
-                else:
-                    raise TypeError(f'Unsupported tuple form: {par}')
-
-            elif isinstance(par, (list, tuple)):
-                for item in par:
-                    if isinstance(item, str):
-                        updates_map[item] = {"expr": None}
-                    elif isinstance(item, lmfit.Parameter):
-                        updates_map[item.name] = {"expr": item.expr}
-                    elif isinstance(item, tuple) and len(item) == 2 and isinstance(item[1], lmfit.Parameter):
-                        updates_map[item[0]] = {"expr": item[1].expr}
-                    elif isinstance(item, tuple) and len(item) == 2 and isinstance(item[1], str):
-                        updates_map[item[0]] = {"expr": item[1]}
-                    else:
-                        raise TypeError(f'Unsupported item type: {type(item)}')
-            else:
-                raise TypeError(f'Unsupported parlist type: {type(par)}')
-
-        if not updates_map:
-            raise ValueError('No parameters provided')
-
-        names = list(updates_map.keys())
-
-        # --- apply expr overrides ---
-        if expr is not None:
-            if isinstance(expr, str):
-                for name in names:
-                    updates_map[name]["expr"] = expr
-            elif isinstance(expr, dict):
-                for name, e in expr.items():
-                    if name in updates_map:
-                        updates_map[name]["expr"] = e
-            elif isinstance(expr, (list, tuple)):
-                if len(expr) != len(names):
-                    raise ValueError(
-                        f'expr list length {len(expr)} does not match number of parameters {len(names)}'
-                    )
-                for name, e in zip(names, expr):
-                    updates_map[name]["expr"] = e
-            else:
-                raise TypeError("expr must be str, dict, or list/tuple of str")
-
-        # --- apply updates ---
-        for pname, updates in updates_map.items():
-            if pname not in self.initial_params:
-                raise ValueError(f'Parameter "{pname}" not found in initial_params')
-
-            if updates:
-                self.initial_params[pname].set(**updates)
-                if "expr" in updates and updates["expr"] is None:
-                    logger.info(f'Cleared expr for "{pname}"')
-                elif "expr" in updates:
-                    logger.info(f'Set expr for "{pname}" → {updates["expr"]}...')
-                else:
-                    logger.info(f'Updated "{pname}" with {updates}...')
-
-
-    ### --- EXPERIMENTAL (NEW) ---###
-    def _set_global_expr(self, *parlist, expr=None):
-        """
-        Tie parameters in `parlist` to user-defined expressions.
-
-        Args
-        ----
-        *parlist : sequence of str, lmfit.Parameter, lmfit.Parameters, tuple, or list
-            Supported forms:
-            - String: "sigma_0"
-            - lmfit.Parameter: uses its .name
-            - lmfit.Parameters: all keys included
-            - Tuple: ("sigma_0", Parameter)
-            - List/tuple of any of the above
-
-        expr : str, dict, or list of str, optional
-            If provided:
-            - str: same expression applied to all parameters
-            - dict: mapping of {name: expr} for selective assignment
-            - list of str: must match len(names); assigns expressions in order
-
-        Raises
-        ------
-        ValueError
-            If no parameters provided, or if expr list length mismatch.
-        TypeError
-            If unsupported input types are provided.
-        """
-        names = []
-
-        # --- normalize input into names ---
-        for par in parlist:
-            if isinstance(par, str):
-                names.append(par)
-            elif isinstance(par, lmfit.Parameter):
-                names.append(par.name)
-            elif isinstance(par, lmfit.Parameters):
-                names.extend(list(par.keys()))
-            elif isinstance(par, (list, tuple)):
-                for item in par:
-                    if isinstance(item, str):
-                        names.append(item)
-                    elif isinstance(item, lmfit.Parameter):
-                        names.append(item.name)
-                    elif isinstance(item, tuple) and len(item) == 2 and isinstance(item[1], lmfit.Parameter):
-                        names.append(item[0])
-                    else:
-                        msg = f'Unsupported item type: {type(item)}'
-                        logger.error(msg)
-                        raise TypeError(msg)
-            else:
-                msg = f'Unsupported parlist type: {type(par)}'
-                logger.error(msg)
-                raise TypeError(msg)
-
-        if not names:
-            msg = 'No parameters provided'
-            logger.error(msg)
-            raise ValueError(msg)
-
-        # deduplicate
-        names = list(dict.fromkeys(names))
-
-        # --- apply expr overrides ---
-        if expr is not None:
-            if isinstance(expr, str):
-                expr_map = {name: expr for name in names}
-            elif isinstance(expr, dict):
-                expr_map = {name: expr.get(name, None) for name in names}
-            elif isinstance(expr, (list, tuple)):
-                if len(expr) != len(names):
-                    raise ValueError(
-                        f'expr list length {len(expr)} does not match number of parameters {len(names)}'
-                    )
-                expr_map = dict(zip(names, expr))
-            else:
-                raise TypeError("expr must be str, dict, or list/tuple of str")
-        else:
-            # default: clear exprs
-            expr_map = {name: None for name in names}
-
-        # --- apply to parameters ---
-        for pname, e in expr_map.items():
-            if pname not in self.initial_params:
-                msg = f'Parameter "{pname}" not found in initial_params'
-                logger.error(msg)
-                raise ValueError(msg)
-
-            self.initial_params[pname].expr = e
-            flag = self.initial_params[pname].vary
-            self.initial_params[pname].set(vary=flag)
-
-            if e is None:
-                logger.info(f'Cleared expr for "{pname}" (vary={flag})')
-            else:
-                logger.info(f'Set expr for "{pname}" → {e} (vary={flag})')
-
-
-    def set_global_params(self, *parlist):
-        """
-        Public API: tie one or more parameters to a single master parameter.
-        This forwards to the internal `_set_global_params`.
-        """
-        self._set_global_params(*parlist)
-
-    # optional alias
-    def set_global(self, *parlist):
-        """Alias for set_global_params."""
-        self._set_global_params(*parlist)
-
-
-    def set_global_params_group(self, *parlist):
-        """
-        Public API: tie one or more parameters to a single master parameter.
-        This forwards to the internal `_set_global_params_group`.
-        """
-        self._set_global_params_group(*parlist)
-
-    # optional alias
-    def set_global_group(self, *parlist):
-        """Alias for set_global_params."""
-        self._set_global_params_group(*parlist)
-
-    # optional alias
-    def set_global_expr(self, *parlist, expr=None):
-        """Alias for _set_global_expr."""
-        self._set_global_expr(*parlist, expr=expr)
-
-
-
-    ### --- EXPERIMENTAL ---###
-    def _update_params(self, *parlist):
-        """
-        Update many parameters in `self.initial_params`.
-
-        Args
-        ----
-        *parlist : sequence of tuple, dict, or Parameter
-            - Tuples: (name, value, vary, min, max, expr, brute_step)
-              Only provided elements are updated.
-            - Dicts: {'name': 'sigma', 'value': 0.25, 'vary': True}
-              Keys map directly to Parameter attributes.
-            - Parameter instances: update using their defined attributes.
-
-        Notes
-        -----
-        - Existing parameters are updated in place.
-        - Only explicitly provided attributes are updated; others remain unchanged.
-        - If a parameter does not exist, it will be added. (NOT SURE)
-        """
-        valid_keys = {"value", "vary", "min", "max", "expr", "brute_step"}
-
-        for par in parlist:
-            # --- normalize input into (name, updates) ---
-            if isinstance(par, lmfit.Parameter):
-                name = par.name
-                updates = {}
-                if par.value is not None:
-                    updates["value"] = par.value
-                if par.vary is not None:
-                    updates["vary"] = par.vary
-                # only include min/max if not lmfit defaults
-                if par.min is not None and np.isfinite(par.min):
-                    updates["min"] = par.min
-                if par.max is not None and np.isfinite(par.max):
-                    updates["max"] = par.max
-                if par.expr is not None:
-                    updates["expr"] = par.expr
-                if par.brute_step is not None:
-                    updates["brute_step"] = par.brute_step
-
-            # --- NEED TO CORRECT THIS PART ----
-            elif isinstance(par, dict):
-                if "name" not in par:
-                    msg = 'Dict must contain a "name" key'
-                    logger.error(msg)
-                    raise ValueError(msg)
-
-                name = par["name"]
-                updates = {}
-
-                # only include keys explicitly present in the dict
-                for k in valid_keys:
-                    if k in par and par[k] is not None:
-                        # filter out lmfit defaults if user explicitly passed them
-                        if k == "min" and par[k] == -np.inf:
-                            continue
-                        if k == "max" and par[k] == np.inf:
-                            continue
-                        updates[k] = par[k]
-
-                # warn about unsupported keys
-                unsupported = set(par.keys()) - (valid_keys | {"name"})
-                if unsupported:
-                    logger.warning(
-                        f'Ignoring unsupported keys for parameter "{name}": {sorted(unsupported)}'
-                    )
-            # --- NEED TO CORRECT THIS PART ----
-
-
-            elif isinstance(par, tuple):
-                # enforce pattern length
-                name = par[0]
-                length = len(par)
-                if length < 2 or length > 7:
-                    msg = (
-                        f'Tuple for parameter "{name}" must follow the pattern '
-                        '(NAME, VALUE, VARY, MIN, MAX, EXPR, BRUTE_STEP). '
-                        f'Got length {length}.'
-                    )
-                    logger.error(msg)
-                    raise ValueError(msg)
-                updates = {}
-                if length > 1 and par[1] is not None:
-                    updates["value"] = par[1]
-                if length > 2 and par[2] is not None:
-                    updates["vary"] = par[2]
-                if length > 3 and par[3] is not None and np.isfinite(par[3]):
-                    updates["min"] = par[3]
-                if length > 4 and par[4] is not None and np.isfinite(par[4]):
-                    updates["max"] = par[4]
-                if length > 5 and par[5] is not None:
-                    updates["expr"] = par[5]
-                if length > 6 and par[6] is not None:
-                    updates["brute_step"] = par[6]
-
-            else:
-                msg = f'Unsupported type in parlist: {type(par)}'
-                logger.error(msg)
-                raise TypeError(msg)
-
-            # --- apply updates safely ---
-            if name in self.initial_params:
-                # Update only specified keys; preserve everything else
-                existing = self.initial_params[name]
-                if updates:
-                    logger.info(f'Updating parameter "{name}" and its attributes in "initial_params" parameters...' )
-                    existing.set(**updates)
-            else:
-                # Add new parameter with only provided keys
-                # value is commonly expected; if omitted, lmfit will default to 0.0
-                self.initial_params.add(name, **updates)
-
-                
-    ## --- EXPERIMENTAL (NEW) ---###
-    def _update_params(self, *parlist):
-        """
-        Update many parameters in `self.initial_params`.
-
-        Args
-        ----
-        *parlist : sequence of tuple, dict, Parameter, or dict-of-dicts
-            - Tuples: (name, value, vary, min, max, expr, brute_step)
-            - Dicts: {'name': 'sigma', 'value': 0.25, 'vary': True}
-            - Parameter instances: update using their defined attributes.
-            - Dict-of-dicts: {'sigma': {'value': 0.25}, 'center': {'vary': False}}
-
-        Notes
-        -----
-        - Existing parameters are updated in place.
-        - Only explicitly provided attributes are updated; others remain unchanged.
-        - If a parameter does not exist, a ValueError is raised.
-        """
-        valid_keys = {"value", "vary", "min", "max", "expr", "brute_step"}
-
-        for par in parlist:
-            # --- case: dict-of-dicts for multiple parameters ---
-            if isinstance(par, dict) and all(isinstance(v, dict) for v in par.values()):
-                for name, attrs in par.items():
-                    updates = {k: v for k, v in attrs.items()
-                            if k in valid_keys and v is not None}
-                    if name not in self.initial_params:
-                        msg = f'Parameter "{name}" not found in initial_params...'
-                        # logger.error(msg)
-                        # raise ValueError(msg)
-                        logger.warning(msg)
-                    logger.info(f'Updating parameter "{name}"...')
-                    self.initial_params[name].set(**updates)
-                continue
-
-            # --- case: single Parameter instance ---
-            if isinstance(par, lmfit.Parameter):
-                name = par.name
-                updates = {
-                    "value": par.value,
-                    "vary": par.vary,
-                    "expr": par.expr,
-                    "brute_step": par.brute_step,
-                }
-                if par.min is not None and np.isfinite(par.min):
-                    updates["min"] = par.min
-                if par.max is not None and np.isfinite(par.max):
-                    updates["max"] = par.max
-
-            # --- case: single dict ---
-            elif isinstance(par, dict):
-                if "name" not in par or not isinstance(par["name"], str):
-                    msg='Dict must contain a string "name" key'
-                    logger.error(msg)
-                    raise ValueError()
-                name = par["name"]
-                updates = {}
-                for k in valid_keys:
-                    if k in par and par[k] is not None:
-                        if k == "min" and par[k] == -np.inf:
-                            continue
-                        if k == "max" and par[k] == np.inf:
-                            continue
-                        updates[k] = par[k]
-                unsupported = set(par.keys()) - (valid_keys | {"name"})
-                if unsupported:
-                    logger.warning(
-                        f'Ignoring unsupported keys for parameter "{name}": {sorted(unsupported)}'
-                    )
-
-            # --- case: tuple ---
-            elif isinstance(par, tuple):
-                name = par[0]
-                length = len(par)
-                if length < 2 or length > 7:
-                    msg = (
-                        f'Tuple for parameter "{name}" must follow the pattern '
-                        '(NAME, VALUE, VARY, MIN, MAX, EXPR, BRUTE_STEP). '
-                        f'Got length {length}.'
-                    )
-                    logger.error(msg)
-                    raise ValueError(msg)
-                updates = {}
-                if length > 1 and par[1] is not None:
-                    updates["value"] = par[1]
-                if length > 2 and par[2] is not None:
-                    updates["vary"] = par[2]
-                if length > 3 and par[3] is not None and np.isfinite(par[3]):
-                    updates["min"] = par[3]
-                if length > 4 and par[4] is not None and np.isfinite(par[4]):
-                    updates["max"] = par[4]
-                if length > 5 and par[5] is not None:
-                    updates["expr"] = par[5]
-                if length > 6 and par[6] is not None:
-                    updates["brute_step"] = par[6]
-
-            else:
-                msg=f'Unsupported type in parlist: {type(par)}'
-                logger.error(msg)
-                raise TypeError(msg)
-
-            # # --- apply updates ---
-            # if name not in self.initial_params:
-            #     msg = f'Parameter "{name}" not found in initial_params'
-            #     logger.error(msg)
-            #     raise ValueError(msg)
-
-            # if updates:
-            #     logger.info(f'Updating parameter "{name}"...')
-            #     self.initial_params[name].set(**updates)
-            
-            # --- apply updates ---
-            if name in self.initial_params:
-                if updates:
-                    logger.info(f'Updating parameter "{name}"...')
-                    self.initial_params[name].set(**updates)
-            else:
-                # Add new parameter with provided attributes
-                # If no value is given, lmfit defaults to 0.0
-                logger.warning(f'Adding new parameter "{name}" not found in initial_params...')
-                self.initial_params.add(name, **updates)
-
-
-    # optional alias
-    def update_params(self, *parlist):
-        """Alias for _update_params."""
-        self._update_params(*parlist)
-
-
-    # -------------------------------
-    # Fitting Functions
-    # -------------------------------
-    def _eval(self, params=None):
+    def _eval(self, params: Optional[lmfit.Parameters] = None):
         """Evaluate the model with supplied parameters."""
         if params is None:
-            params = self.initial_params
+            params = self.init_params
         self.y_sim = np.zeros_like(self.ydat)
+        # self.y_sim = np.zeros((self.N, self.ny))
         for i in range(self.ny):
             self.y_sim[:, i] = self._evaluate_models(self.xdat, params, i)
-        # logger.info(f'Evaluating lmfit fitting/minimization protocols for the functions...')
+        # self.logger.info(f'Evaluating lmfit fitting/minimization protocols for the functions...')
 
 
-    def eval(self, x=None, params=None):
+    def eval(self, x: Optional[np.ndarray] = None, params: Optional[lmfit.Parameters] = None) -> np.ndarray:
         """Evaluate the model with supplied parameters. (NOT SURE THIS IS GOOD)"""
-        # x = x or self.xdat
         params = params or self.result.params
         x = x if x is not None else self.xdat
-        y_eval = np.zeros((len(x), self.ny), dtype=float)
+        y_sim = np.zeros((len(x), self.ny), dtype=float)
         for i in range(self.ny):
-            y_eval[:, i] = self._evaluate_models(x, params, i)   # init values
-        # logger.info(f'Evaluating lmfit fitting/minimization protocols for the functions...')
-        return y_eval
-
-    def _eval_components_per_dataset(self, i, x=None, params=None):
-        """Return dictionary of name of dataset with dictionary results for each component."""
-        if self.prefix_on:
-            results = {}
-            models = self.models
-            params = params or self.result.params
-            x = x if x is not None else self.xdat
-            for midx, model in enumerate(models):
-                y = self.evaluate_function(
-                    func=model.func,
-                    x=x,
-                    params=params,
-                    # prefix=self.prefixes[midx],
-                    prefix=model.prefix,       # cleaner
-                    i=i,
-                    # func_kws=self.func_kws_all[midx],
-                    func_kws=model.func_kws,   # self-contained
-                )   
-                results[model.prefix.split('_')[0]] = y         
-            return results
-        return {}
-
-    def eval_components_per_dataset(self, x=None, params=None):
-        """Return dictionary of name of dataset with dictionary results for each component."""
-        if self.prefix_on:
-            results = {}
-            params = params or self.result.params
-            x = x if x is not None else self.xdat
-            for i in range(self.ny):
-                r = self._eval_components_per_dataset(i=i, x=x, params=params)
-                results[f'{i}'] = r
-
-            return results
-        return {}
+            y_sim[:, i] = self._evaluate_models(x, params, i)   # init values
+        return y_sim
     
-    def eval_components(self, x=None, params=None):
-        """Return dictionary of name of dataset with dictionary results for each component."""
-        return self.eval_components_per_dataset(x=x, params=params)
 
-    def _r2_safe(self, y_true, y_pred, **kwargs):
-        """Automatically choose sklearn or fallback r2_score_util."""
-        # --- If no NaNs, use sklearn when available ---
-        if not self.has_nan and r2_score is not None:
-            try:
-                return r2_score(y_true, y_pred, **kwargs)
-            except Exception as exc:
-                logger.warning(
-                    f'sklearn `scikit-learn` r2_score failed ({exc}); using `globutils.r2_score_util` instead...'
-                )
-
-        # --- If NaNs or sklearn unavailable, fallback ---
-        logger.warning(
-            f'Using nan-safe `globutils.r2_score_util`...'
-        )
-        return r2_score_util(y_true, y_pred, **kwargs)
-
-    def _residual(self, params):
+    def _residual(self, params: lmfit.Parameters) -> np.ndarray:
         """Return the residual."""
         self._eval(params=params)
         diff = self.y_sim - self.ydat
         return diff.flatten()
-
-    def _iteration(self, params, it, resid):
-        """Callback during fitting: log RSS and a spinner character."""
-        rss = np.sum(resid**2)
-        self.rss.append(rss)
-        char = next(self.thinking)
-        sys.stdout.write(f'\rINFO: Fitting {char:s}')
-        sys.stdout.flush()
-        # sys.stdout.write(f'\rFitting ' + char)
-        # logger.info(sys.stdout.write(f'\rFitting ' + char))
-        # sys.stdout.write('\rRSS: ' + str(rss))
-        # logger.info(f'Fitting {char:s}')   ## TOO MUCH verbose
-        # logger.info(f'Fitting {char:s} | RSS={rss:.6e}')   ## TOO MUCH verbose
-        # logger.info(f'\rFitting {char:s} | RSS={rss:.6e}')   ## TOO MUCH verbose
     
-        # if self.progress_bar:
-        #     self.progress_bar.update(1)
-
-        # logger.info("Iteration %d | RSS=%.6e", it, rss)
-
-
+    # -----------------------------
+    # fitting API
+    # -----------------------------
     def fit(
-            self,
-            method='',
-            nan_policy='',
-            verbose=False,
-            iter_cb=None,
-            progress=True,
-            **fit_kws
-            ):
-        """Fit the model to the data using using lmfit.minimize()
+        self,
+        method: Optional[str] = None,
+        nan_policy: str = "",
+        verbose: bool = False,
+        iter_cb: Optional[callable] = None,
+        logger=None,
+        **fit_kws
+    ):
+        """
+        Fit the model to the data using ``lmfit.minimize()``.
 
         Args:
             method (str): Name of the fitting method to use. Defaults to 'leastsq'.
@@ -1868,221 +1310,451 @@ class LmfitGlobal:
             iter_cb (callable, optional): Callback function called at each fit iteration.
                 Signature: ``iter_cb(params, iter, resid, *args, **kws)``
                 Default to None
-            progress (bool, optional): shows a progress bar (requires tqdm), default to True
             **fit_kws (dict, optional): Options to pass to the minimizer being used.
         Returns:
-            None
+            None: The fit results are stored in ``self.result``.
         """
-        # --- Use provided arguments or fall back to default instances ---
+        # --- Resolve arguments with fallbacks ---
+        logger = logger or self.logger
         method = method or self.method
         fit_kws = fit_kws or self.fit_kws
-        iter_cb = iter_cb or self._iteration
+        # iter_cb = iter_cb or self._iteration
         nan_policy = nan_policy or self.nan_policy
 
-        # # --- Progress bar setup ---
-        # if progress and not _HAS_TQDM:
-        #     raise RuntimeError(
-        #         f'tqdm is required for progress=True. Install it or set progress=False.\n'
-        #         f'Installed by `pip install tqdm` or you method of installations'
-        #         )
 
-        # self.progress_bar = tqdm(total=None, desc="Fitting", leave=True) if progress else None
-
+        # --- Progress message (start) ---
+        # if verbose:
+        import time
+        t0 = time.perf_counter()
+        msg = f"Fitting started (method='{method}') ..."
+        try:
+            self.logger.info(msg)
+        except NameError:
+            print(msg)
+        
         # --- Perform minimization ---
-        self.thinking = itertools.cycle(['.', '..', '...', '....', '.....'])
         self.result = lmfit.minimize(
             self._residual,
-            self.initial_params,
+            self.init_params,
             method=method,
             nan_policy=nan_policy,
             iter_cb=iter_cb,
-            **fit_kws
+            **fit_kws,
         )
+        
+        self.fit_success = bool(self.result.success)
+        elapsed = time.perf_counter() - t0
 
-        # if self.progress_bar:
-        #     self.progress_bar.close()
+        # --- Post-fit processing ---
+        self._post_fit(verbose=verbose, logger=logger)
+        # elapsed = time.perf_counter() - t0
+
+        # --- create canonical FitData once ---
+        self.fitdata = self.build_fit_data(numpoints=None)
+
+        # --- Post-fit log summary ---
+        self._log_fit_summary(elapsed=elapsed, logger=self.logger, precision=8)
+
+
+    def _log_fit_summary(self, elapsed=None, logger=None, precision=4):
+        """
+        Log or print a fit summary.
+        """
+        logger = logger or getattr(self, "logger", None)
+
+        status = "SUCCESS" if self.fit_success else "FAILED"
+        rsq = self.r2_dict.get("weighted", None)
+
+        header = f"Fitting finished: {status}"
+
+        parts = [
+            f"nfev={self.result.nfev}",
+            f"rsquared={rsq:.{precision}g}" if rsq is not None else None,
+            f"redchi={self.result.redchi:.{precision}g}",
+            f"aic={self.result.aic:.{precision}g}",
+            f"bic={self.result.bic:.{precision}g}",
+        ]
+
+        if elapsed is not None:
+            parts.append(f"time={elapsed:.2f}s")
+
+        # Remove None entries safely
+        summary = " | ".join(p for p in parts if p is not None)
+
+        if logger:
+            logger.info(header)
+            # logger.info("  " + summary)
+            logger.info(summary + " ...")
+        else:
+            print(header, flush=True)
+            # print("  " + summary, flush=True)
+            print(summary + " ...", flush=True)
+
+
             
-        # --- Check fit/minimization success ----
-        self.fit_success = self.result.success
+    def _post_fit(self, *, verbose: bool = False, logger=None):
+        """
+        Post-processing after successful minimization:
+        - evaluate model
+        - compute R² metrics
+        - verbosity output
+        """
+        logger = logger or self.logger
 
-        # # --- Verbose output ---
-        # if verbose:
-        #     print(f'\nParameters fit values:')
-        #     self.result.params.pretty_print()
-        #     print('Chi2 {:.8e}'.format(self.result.chisqr))
-        # self._eval(params=self.result.params)
+        if not self.fit_success:
+            self._log_err( "Fitting FAILED — check model, data, or initial parameters", RuntimeError)
 
-        # --- Evaluate with fitted parameters ---
+        # --- Evaluate model ---
         self._eval(params=self.result.params)
-        self.init_fit = self.eval(params=self.initial_params)
+        self.init_fit = self.eval(params=self.init_params)
         self.best_fit = self.eval(params=self.result.params)
         self.residual = self.ydat - self.y_sim
 
-        # --- If fit/minimization DONE, compute rsquares ---
-        if self.fit_success:
-            logger.info(f'Fitting DONE...')
-            # self.r2_raw = rsq(self.ydat, self.y_sim, multioutput='raw_values')
-            # self.r2_mean = rsq(self.ydat, self.y_sim, multioutput='uniform_average')
-            # self.r2_weighted = rsq(self.ydat, self.y_sim, multioutput='variance_weighted')
-            self.r2_raw = self._r2_safe(self.ydat, self.y_sim, multioutput='raw_values')
-            self.r2_mean = self._r2_safe(self.ydat, self.y_sim, multioutput='uniform_average')
-            self.r2_weighted = self._r2_safe(self.ydat, self.y_sim, multioutput='variance_weighted')
-
-        else:
-            msg = f'Fitting UNSUCCESSFUL...CHECK AGAIN...'
-            logger.error(msg)             # log the error
-            raise RuntimeError(msg)       # raise with the messave
-
-        # self.r2 = {
-        #     "raw": self.r2_raw,           # per dataset (raw values)
-        #     "mean": self.r2_mean,         # for all (uniform average)
-        #     "weighted": self.r2_weighted, # for all (variance weighted)
-        # }
+        # --- R^2 statistics ---
         self.r2_dict = {
-            "raw": self.r2_raw,           # per dataset (raw values)
-            "mean": self.r2_mean,         # for all (uniform average)
-            "weighted": self.r2_weighted, # for all (variance weighted)
+            "raw": r_squared_safe(self.ydat, self.y_sim, multioutput="raw_values"),
+            "mean": r_squared_safe(self.ydat, self.y_sim, multioutput="uniform_average"),
+            "weighted": r_squared_safe(self.ydat, self.y_sim, multioutput="variance_weighted"),
         }
-        self.r2 = copy.deepcopy(self.r2_dict)
+
+        # Keep backwards compatibility
+        self.r2 = self.r2_dict
+        self.rsquared = self.r2.get("weighted", None)   # GLOBAL VALUE
 
         # --- Verbose output ---
-        if self.fit_success and verbose:
+        if verbose and self.fit_success:
             self._verbosity()
 
-    
-    def _verbosity(self):
-        """Prnt verbosity of fit parameters"""
-        logger.info('Parameters fit values:')
-        # self.result.params.pretty_print()
-        self.pretty_print()  # USE THIS
-        # logger.info(f'Chi2 {self.result.chisqr:.8e}')
-        # if self.fit_success:
-        # logger.info(
-        #     f'Goodness-of-fit metrics — R² (mean): {self.r2_mean:.8f}, R² (weighted): {self.r2_weighted:.8f}'
-        # )
-        # logger.info(
-        #     f'Coefficient of determination: R² = {self.r2_mean:.8f} (uniform mean), R² = {self.r2_weighted:.8f} (variance-weighted)'
-        # )
-        logger.info(
-            f'Coefficient of determination: R² = {self.r2_mean:.8f} (uniform average)...'
+
+    # -------------------------------
+    # Data Collector Helpers
+    # -------------------------------   
+    def eval_components(
+        self,
+        *,
+        x_data: Optional[np.ndarray] = None, 
+        x_model: Optional[np.ndarray] = None, 
+        params: Optional[lmfit.Parameters] = None
+    ):
+        """
+        Evaluate each model component per dataset.
+
+        Each component is evaluated on:
+        - the data x-grid (for residual consistency), and
+        - the model x-grid (for smooth visualization).
+
+        This method is meaningful only for multicomponent models.
+
+        Args:
+            x_data (array_like, optional): x-values of the data grid. If None, ``self.x_data`` is used.
+                Component values evaluated on this grid are intended for residuals and statistics.
+
+            x_model (array_like, optional): x-values of the model grid (typically dense). If None, the 
+                data grid is used. Component values evaluated on this grid are intended for plotting and 
+                visualization.
+
+            params (lmfit.Parameters, optional): Parameter set to use for evaluation. If None,
+                ``self.result.params`` is used.
+
+        Returns:
+            results: dict
+                Nested dictionary of component evaluations with structure::
+
+                    {
+                        dataset_index: {
+                            component_name: {
+                                "data": np.ndarray,
+                                "model": np.ndarray,
+                            }
+                        }
+                    }
+
+                where:
+                - ``dataset_index`` is the dataset number (0-based),
+                - ``component_name`` is the model component identifier,
+                - ``"data"`` contains component values on ``x_data``,
+                - ``"model"`` contains component values on ``x_model``.
+
+                If the model is not multicomponent, an empty dictionary is returned.
+
+        Notes:
+            - Component names are derived from model prefixes.
+            - Residuals are not computed here.
+            - This method does not sum components; it returns individual
+            contributions only.
+        """
+        if not self.is_multicomponent:
+            return {}
+
+        params = params or self.result.params
+        x_data = np.asarray(x_data if x_data is not None else self.x_data)
+        x_model = np.asarray(x_model if x_model is not None else x_data)
+
+        results: dict[int, dict[str, dict[str, np.ndarray]]] = {}
+
+        for i in range(self.ny):
+            comp_results = {}
+            for model in self.models:
+                name = model.prefix.rstrip("_")
+
+                y_data = self._evaluate_model(model, x_data, params, i)
+                y_model = (
+                    y_data if x_model is x_data
+                    else self._evaluate_model(model, x_model, params, i)
+                )
+
+                comp_results[name] = {
+                    "data": y_data,
+                    "model": y_model,
+                }
+
+            results[i] = comp_results
+
+        # return results
+
+        if self.is_multidataset:
+            return results
+        else:
+            return results[0]
+
+
+    def _build_fit_arrays(self, numpoints: int | None = None):
+        """
+        Built data, initial model, best-fit model, and residuals.
+
+        Notes
+        -----
+        - Residuals are ALWAYS computed on the data x-grid.
+        - A dense x-grid (if requested) is used ONLY for model visualization.
+        """
+        # --- Raw data grid  ---
+        x_data = np.asarray(self.x_data, dtype=float)
+        y_data = np.asarray(self.y_data, dtype=float)
+        # # --- cut raw data ---
+        # x_data = np.asarray(self.xdat, dtype=float)
+        # y_data = np.asarray(self.ydat, dtype=float)
+
+        # if x_data.shape != y_data.shape:
+        #     raise ValueError("x_data and y_data must have the same shape")
+        if len(x_data) != y_data.shape[0]:
+            raise ValueError(
+                f"x_data length ({len(x_data)}) does not match "
+                f"y_data rows ({y_data.shape[0]})"
+            )
+
+        # --- Model grid (dense only for plotting) ---
+        use_dense = numpoints is not None and x_data.size < numpoints
+
+        x_model = (
+            np.linspace(x_data.min(), x_data.max(), numpoints)
+            if use_dense else x_data
         )
-        logger.info(
-            f'Coefficient of determination: R² = {self.r2_weighted:.8f} (variance-weighted)...'
+
+        # --- Initial model ---
+        y_init_data = self.eval(x=x_data, params=self.init_params)
+        y_init_model = (
+            y_init_data if not use_dense
+            else self.eval(x=x_model, params=self.init_params)
         )
 
+        resid_init = y_data - y_init_data
 
-    @property
-    def verbosity(self):
-        self._verbosity()
-    
-    # @property
-    # def init_fit(self):
-    #     return self.eval(params=self.initial_params)
+        # --- Best-fit model (if fit succeeded) ---
+        y_fit_model = None
+        resid_fit = None
 
-    # @property
-    # def best_fit(self):
-    #     return self.eval(params=self.result.params)
+        if getattr(self, "fit_success", False):
+            y_fit_data = self.eval(x=x_data, params=self.result.params)
+            resid_fit = y_data - y_fit_data
+
+            y_fit_model = (
+                y_fit_data if not use_dense
+                else self.eval(x=x_model, params=self.result.params)
+            )
+
+        # --- Best-fit components per dataset (if is_multicomponent) ---
+        components = None
+        if getattr(self, "fit_success", False) and self.is_multicomponent:
+            components = self.eval_components(
+                x_data=x_data,
+                x_model=x_model,
+                params=self.result.params,
+            )
+
+
+        # --- Pack results ----
+        res =  {
+            "data": {
+                "x": x_data,
+                "y": y_data,
+            },
+            "init": {
+                "x": x_model,
+                "y": y_init_model,
+                "resid": resid_init,
+            },
+            "fit": {
+                "x": x_model,
+                "y": y_fit_model,
+                "resid": resid_fit,
+            },
+             "components": components,  # <-- NEW
+        }
+
+        return res
     
-    # @property
-    # def residual(self):
-    #     return self.ydat - self.y_sim
+
+    def build_fit_data(self, numpoints: int | None = None) -> FitData:
+        """
+        Build and return fit data as a FitData object.
+
+        This is a thin wrapper around `_build_fit_arrays`.
+        """
+        res = self._build_fit_arrays(numpoints=numpoints)
+
+        return FitData(
+            x_data=res["data"]["x"],
+            y_data=res["data"]["y"],
+            x_model=res["init"]["x"],
+            y_init=res["init"]["y"],
+            y_fit=res["fit"]["y"],
+            resid_init=res["init"]["resid"],
+            resid_fit=res["fit"]["resid"],
+            components=(
+                self.eval_components(
+                    x_data=res["data"]["x"],
+                    x_model=res["init"]["x"],
+                    params=self.result.params,
+                )
+                if self.is_multicomponent and self.fit_success
+                else None
+            ),
+        )
+
+    def get_fitdata(self, numpoints: int | None = None) -> FitData:
+        """
+        Return FitData.
+
+        - If numpoints is None: return the canonical fitdata created after fitting.
+        - If numpoints is provided: return a plotting-ready FitData with dense model grid.
+        """
+        if not getattr(self, "fit_success", False):
+            raise RuntimeError("Fit has not been performed or was unsuccessful")
+
+        # Canonical fitdata
+        if numpoints is None:
+            if not hasattr(self, "fitdata"):
+                self.fitdata = self.build_fit_data(numpoints=None)
+            return self.fitdata
+
+        # Plotting / visualization fitdata
+        return self.build_fit_data(numpoints=numpoints)
 
 
     # -------------------------------
     # Pretty Print Helpers
     # -------------------------------
-    def pretty_repr(self, oneline=False):
-        """Return a pretty representation of a Parameters class.
+    def _pretty_expr(self):
+        self.logger.info("The model is to be constructed as...")
+        expr = build_expr(
+            funcs=[spec.func for spec in self.model_specs],
+            operators=self.theory_connectors
+        )
+        expr = f'y(x;) = {expr}'
+        pretty_expr(expr, line_style="#", logger=self.logger)
+
+
+    def _verbosity(self):
+        """Print verbosity of fit parameters"""
+        self.logger.info('Parameters fit values:')
+        # self.result.params.pretty_print()
+        pretty_print_params(params=self.result.params, logger=self.logger)
+        self._log_r2(logger=self.logger, precision=8)
+
+
+    @property
+    def verbosity(self):
+        self._verbosity()
+
+
+    def _log_r2(
+        self,
+        logger=None,
+        precision: int=4
+    ):
+        """
+        Log :math:`R^2` statistics in a readable way.
 
         Args:
-            oneline (bool, optional): If True prints a one-line parameters representation, 
-                default is False.
-
-        Returns:
-            s (str): Parameters representation.
-
+            logger: logger instance (defaults to self.logger)
+            precision: number of decimal digits
+            atol, rtol: tolerances for comparing mean and weighted R²
         """
-        if oneline:
-            return self.__repr__()
-        s = "Parameters({\n"
-        for key in self.result.params.keys():
-            s += f"    '{key}': {self.result.params[key]}, \n"
-        s += "    })\n"
-        return s
-    
+        logger = logger or self.logger
 
-    def pretty_print(self, oneline=False, colwidth=8, precision=4, fmt='g',
-                    columns=['value', 'min', 'max', 'stderr', 'vary', 'expr',
-                            'brute_step']):
-        """Pretty-print of parameters data.
+        r2 = self.r2_dict
+        ny = getattr(self, "ny", None)
 
-        Args:
-            oneline (bool, optional): If True prints a one-line parameters representation,
-                default is False.
-            colwidth (int, optional): Column width for all columns specified in `columns`,
-                default is 8.
-            precision (int, optional): Number of digits to be printed after floating point, 
-                default is 4.
-            fmt ({'g', 'e', 'f'}, optional): Single-character numeric formatter. Valid values are: `'g'`
-                floating point and exponential (default), `'e'` exponential, or `'f'` floating point.
-            columns (list of str, optional): List of Parameter attribute names to print, 
-                default is to show all attributes.
+        logger.info("Coefficient of determination (R^2) statistics:")
 
-        Returns:
-            None
-        """
-        if oneline:
-            logger.info(self.pretty_repr(oneline=oneline))
+        raw = r2.get("raw")
+        mean = r2.get("mean")
+        weighted = r2.get("weighted")
+
+        # --- Single dataset ---
+        if ny == 1:
+            val = None
+
+            if raw is not None:
+                val = np.atleast_1d(raw)[0]
+            elif mean is not None:
+                val = mean
+            elif weighted is not None:
+                val = weighted
+
+            if val is not None:
+                logger.info(f"  R-squared = {val:.{precision}f}")
             return
 
-        name_len = max(len(s) for s in self.result.params)
-        allcols = ['name'] + columns
-        title = '{:{name_len}} ' + len(columns) * ' {:>{n}}'
-        logger.info(title.format(*allcols, name_len=name_len, n=colwidth).title())
+        # --- Multiple datasets, per-dataset + global ---
+        if raw is not None:
+            raw = np.atleast_1d(raw)
+            for i, val in enumerate(raw):
+                logger.info(f"  R-squared [data {i:02d}] = {val:.{precision}f}")
 
-        numstyle = '{%s:>{n}.{p}{f}}'
-        otherstyles = dict(
-            name='{name:<{name_len}} ',
-            stderr='{stderr!s:>{n}}',
-            vary='{vary!s:>{n}}',
-            expr='{expr!s:>{n}}',
-            brute_step='{brute_step!s:>{n}}'
-        )
-        line = ' '.join(otherstyles.get(k, numstyle % k) for k in allcols)
+        # --- Global R-squared logic ---
+        # tolerances for comparing mean and weighted R-squared
+        atol, rtol = 1e-10, 1e-8
+        if mean is not None and weighted is not None:
+            if np.isclose(mean, weighted, atol=atol, rtol=rtol):
+                logger.info(f"  R-squared (global)   = {mean:.{precision}f}")
+            else:
+                logger.info(f"  R-squared (mean)     = {mean:.{precision}f}")
+                logger.info(f"  R-squared (weighted) = {weighted:.{precision}f}")
+        else:
+            val = mean if mean is not None else weighted
+            if val is not None:
+                logger.info(f"  R-squared (global)   = {val:.{precision}f}")
 
-        for name, values in sorted(self.result.params.items()):
-            pvalues = {k: getattr(values, k) for k in columns}
-            pvalues['name'] = name
-            if 'stderr' in columns and pvalues['stderr'] is not None:
-                pvalues['stderr'] = (numstyle % '').format(
-                    pvalues['stderr'], n=colwidth, p=precision, f=fmt)
-            elif 'brute_step' in columns and pvalues['brute_step'] is not None:
-                pvalues['brute_step'] = (numstyle % '').format(
-                    pvalues['brute_step'], n=colwidth, p=precision, f=fmt)
 
-            logger.info(
-                line.format(name_len=name_len, n=colwidth, p=precision, f=fmt, **pvalues)
-                )
-            
-            
     def fit_report(self, params, **kws):
         """Return a report of the fitting results."""
-        return self.lmfit_report(params, r2_dict=self.r2_dict, **kws)
+        return lmfit_report(params, rsquared=self.rsquared, **kws)
     
 
     def report_fit(self, params, **kws):
         """Print a report of the fitting results."""
-        print(self.lmfit_report(params, r2_dict=self.r2_dict, **kws)) 
-    
- 
+        print(lmfit_report(params, rsquared=self.rsquared, **kws)) 
+
+
     def report(
             self,
-            inpars=None, 
-            modelpars=None, 
-            show_correl=True, 
-            min_correl=0.1,
-            sort_pars=False, 
-            correl_mode='list'
+            inpars: Optional[lmfit.Parameters] = None,
+            modelpars: Optional[lmfit.Parameters] = None,
+            show_correl: bool = True, 
+            min_correl: float = 0.1,
+            sort_pars: bool = False, 
+            correl_mode: str ='list'
             ):
         """Return a printable fit report.
 
@@ -2105,418 +1777,110 @@ class LmfitGlobal:
         """
         if inpars is None:
             inpars = self.result
-        reprt = self.lmfit_report(
-            inpars=inpars, r2_dict=self.r2_dict, modelpars=modelpars, show_correl=show_correl, 
+        reprt = lmfit_report(
+            inpars=inpars, rsquared=self.rsquared, modelpars=modelpars, show_correl=show_correl, 
             min_correl=min_correl, sort_pars=sort_pars, correl_mode=correl_mode
             )
         
-        expr = f'{self.composite_model}'
-        modname = self.wrap_model_reprstring(expr=expr, width=80)
+        expr = f'{self.lmfit_composite_model}'
+        modname = wrap_expr(expr=expr, width=80)
         reprt =  f'[[Model]]\n    {modname}\n{reprt}'
         print(reprt)
 
 
-    
-    @_ensureMatplotlib
-    def plot_dat(
-            self, ax=None, datafmt='o', xlabel=None, ylabel=None, yerr=None, 
-            data_kws=None, ax_kws=None, parse_complex='abs', title='data'
-            ):
-        
-        from matplotlib import pyplot as plt
-        if data_kws is None:
-            data_kws = {}
-        if ax_kws is None:
-            ax_kws = {}    
+    # -------------------------------
+    # Plotting Helpers
+    # -------------------------------
+    def _plot_what(
+        self,
+        plotwhat: str,
+        *,
+        ax=None,
+        yerr: float | np.ndarray | None = None,
+        xlabel: str | None = None,
+        ylabel: str | None = None,
+        xlim: tuple[float, float] | None = None,
+        ylim: tuple[float, float] | None = None,
+        numpoints: int | None = None,
+        plot_residual: bool = True,
+        show: bool = True,
+        data_kws: dict[str, Any] | None = None,
+        init_kws: dict[str, Any] | None = None,
+        fit_kws: dict[str, Any] | None = None,
+        resid_kws: dict[str, Any] | None = None,
+        pretty_kw: dict[str, Any] | None = None,
+    ):
+        """
+        Plot data + model attribute using FitData.
 
-        # The function reduce_complex will convert complex vectors into real vectors
-        reduce_complex = get_reducer(parse_complex)
-
-        if not isinstance(ax, plt.Axes):
-            ax = plt.axes(**ax_kws)
-
-        xdat = self.data_x              # true x not cut
-        ydat = np.asarray(self.data_y)  # true y not cut
-
-        # if yerr is None and self.weights is not None:
-        #     yerr = 1.0/self.weights
-        if yerr is not None:
-            yerr = np.asarray(yerr)
-            if ydat.shape != yerr.shape:
-                # raise ValueError(f'Shape mismatch: {ydat.shape} != {yerr.shape}')
-                msg=f'Input data and error arrays are different: {ydat.shape} != {yerr.shape}'
-                logger.error(msg)
-                raise AttributeError(msg)
-            # ax.errorbar(
-            #     xdat, reduce_complex(ydat),
-            #     yerr=propagate_err(ydat, yerr, parse_complex),
-            #     fmt=datafmt, label='data', zorder=2, **data_kws
-            #     )
-            val = reduce_complex(ydat)
-            err = propagate_err(ydat, yerr, parse_complex)
-            if self.ny>1:
-                for i in range(self.ny):
-                    # y = val[:, i]
-                    # dy = err[:, i]
-                    ax.errorbar(xdat, val[:, i], yerr=err[:, i], fmt=datafmt, label=f'data{i}', zorder=1, **data_kws)
-            else:
-                for i in range(self.ny):
-                    # y = val[:, i]
-                    # dy = err[:, i]
-                    ax.errorbar(xdat, val[:, i], yerr=err[:, i], fmt=datafmt, label=f'data', zorder=1, **data_kws)
-        else:
-            # ax.plot(xdat, reduce_complex(ydat), datafmt, label='data', zorder=1, **data_kws)
-            if self.ny>1:
-                for i in range(self.ny):
-                    ax.plot(xdat, reduce_complex(ydat)[:, i], datafmt, label=f'data{i}', zorder=1, **data_kws)
-            else:
-                ax.plot(xdat, reduce_complex(ydat), datafmt, label='data', zorder=1, **data_kws)
-
-
-        if title:
-            ax.set_title(title)
-        elif ax.get_title() == '':
-            ax.set_title('data')
-        if xlabel is None:
-            ax.set_xlabel('x')
-        else:
-            ax.set_xlabel(xlabel)
-        if ylabel is None:
-            ax.set_ylabel('raw data')
-        else:
-            ax.set_ylabel(ylabel)
-        ax.legend()
-
-        return ax
-
-
-    @_ensureMatplotlib
-    def plot_init(
-            self, ax=None, datafmt='o', initfmt='--', xlabel=None, ylabel=None, yerr=None, show_init_dat=True,
-            numpoints=None, data_kws=None, init_kws=None, ax_kws=None, parse_complex='abs', title='initial fit'
-            ):
-        
-        from matplotlib import pyplot as plt
-        if data_kws is None:
-            data_kws = {}
-        if init_kws is None:
-            init_kws = {}
-        if ax_kws is None:
-            ax_kws = {}    
-
-        # The function reduce_complex will convert complex vectors into real vectors
-        reduce_complex = get_reducer(parse_complex)
-
-        if not isinstance(ax, plt.Axes):
-            ax = plt.axes(**ax_kws)
-
-        x_array = self.data_x              # true x not cut
-        # x_array = self.xdat                # cut x
-
-        # make a dense array for x-axis if data is not dense
-        if numpoints is not None and len(x_array) < numpoints:
-            x_array_dense = np.linspace(min(x_array), max(x_array), numpoints)
-        else:
-            x_array_dense = x_array
-
-        if show_init_dat:
-            ax = self.plot_dat(
-                ax=ax, datafmt=datafmt, xlabel=xlabel, ylabel=ylabel, yerr=yerr, 
-                data_kws=data_kws, ax_kws=ax_kws, parse_complex=parse_complex, title=title
-                )
-
-        # self._eval_init(xdat=x_array_dense, params=self.initial_params)
-        # y_eval_init = self.y_eval_init
-        y_eval_init = self.eval(x=x_array_dense, params=self.initial_params)
-        # ax.plot(x_array_dense, reduce_complex(y_eval_init), initfmt, label='initial fit', zorder=2, **init_kws)
-        if self.ny>1:
-            for i in range(self.ny):
-                ax.plot(x_array_dense, reduce_complex(y_eval_init)[:, i], initfmt, label=f'init{i}', zorder=2, **init_kws)
-        else:
-            ax.plot(x_array_dense, reduce_complex(y_eval_init), initfmt, label='init', zorder=2, **init_kws)
-
-        if title:
-            ax.set_title(title)
-        elif ax.get_title() == '':
-            ax.set_title('initial fit')
-        if xlabel is None:
-            ax.set_xlabel('x')
-        else:
-            ax.set_xlabel(xlabel)
-        if ylabel is None:
-            ax.set_ylabel('initial curve')
-        else:
-            ax.set_ylabel(ylabel)
-        ax.legend()
-
-        return ax
-    
-
-    @_ensureMatplotlib
-    def plot_fit(
-            self, ax=None, datafmt='o', fitfmt='-', initfmt='--', xlabel=None, ylabel=None, yerr=None, numpoints=None,
-            data_kws=None, fit_kws=None, init_kws=None, ax_kws=None, show_init=False, show_init_dat=False, parse_complex='abs', title='best fit'
-            ):
-
-        from matplotlib import pyplot as plt
-        if fit_kws is None:
-            fit_kws = {}
-        if ax_kws is None:
-            ax_kws = {}
-
-        # The function reduce_complex will convert complex vectors into real vectors
-        reduce_complex = get_reducer(parse_complex)
-
-        if not isinstance(ax, plt.Axes):
-            ax = plt.axes(**ax_kws)
-
-        x_array = self.data_x              # true x not cut
-        # x_array = self.xdat                # cut x
-
-        # make a dense array for x-axis if data is not dense
-        if numpoints is not None and len(x_array) < numpoints:
-            x_array_dense = np.linspace(min(x_array), max(x_array), numpoints)
-        else:
-            x_array_dense = x_array
-
-        ax = self.plot_dat(
-            ax=ax, datafmt=datafmt, xlabel=xlabel, ylabel=ylabel, yerr=yerr, 
-            data_kws=data_kws, ax_kws=ax_kws, parse_complex=parse_complex, title=title
-            )
-                
-        if show_init:
-            ax = self.plot_init(
-                ax=ax, datafmt=datafmt, initfmt=initfmt, xlabel=xlabel, ylabel=ylabel, yerr=yerr, show_init_dat=show_init_dat,
-                numpoints=numpoints, data_kws=data_kws, init_kws=init_kws, ax_kws=ax_kws, parse_complex=parse_complex, title=title
-            )
-            
-        y_eval_fit = self.eval(x=x_array_dense, params=self.result.params)
-        # ax.plot(x_array_dense, reduce_complex(y_eval_fit), fitfmt, label='best fit', zorder=3, **fit_kws)
-        if self.ny>1:
-            for i in range(self.ny):
-                ax.plot(x_array_dense, reduce_complex(y_eval_fit)[:, i], fitfmt, label=f'fit{i}', zorder=3, **fit_kws)
-        else:
-            ax.plot(x_array_dense, reduce_complex(y_eval_fit), fitfmt, label='fit', zorder=3, **fit_kws)
-    
-
-
-        if title:
-            ax.set_title(title)
-        elif ax.get_title() == '':
-            ax.set_title('best fit')
-        if xlabel is None:
-            ax.set_xlabel('x')
-        else:
-            ax.set_xlabel(xlabel)
-        if ylabel is None:
-            ax.set_ylabel('best fit')
-        else:
-            ax.set_ylabel(ylabel)
-        ax.legend()
-        return ax
-    
-    
-    @_ensureMatplotlib
-    def plot_residuals(
-            self, ax=None, datafmt='o', fitfmt='-', xlabel=None, ylabel=None, yerr=None, 
-            data_kws=None, fit_kws=None, ax_kws=None, parse_complex='abs', title='residuals'
-            ):
-        
-        from matplotlib import pyplot as plt
-        if data_kws is None:
-            data_kws = {}
-        if fit_kws is None:
-            fit_kws = {}
-        if ax_kws is None:
-            ax_kws = {}
-
-        # The function reduce_complex will convert complex vectors into real vectors
-        reduce_complex = get_reducer(parse_complex)
-
-        if not isinstance(ax, plt.Axes):
-            ax = plt.axes(**ax_kws)
-
-        ax.axhline(0, **fit_kws, zorder=4, color='k')
-
-        # xdat = self.data_x              # true x not cut
-        xdat = np.asarray(self.xdat)      # cut x
-        # ydat = np.asarray(self.data_y)  # true y not cut
-        ydat = np.asarray(self.ydat)      # cut y           
-
-        # ax = self.plot_dat(
-        #     ax=ax, datafmt=datafmt, xlabel=xlabel, ylabel=ylabel, yerr=yerr, 
-        #     data_kws=data_kws, ax_kws=ax_kws, parse_complex=parse_complex, title=title
-        #     )
-        
-        y_eval_fit = self.y_sim
-        # y_eval_fit = self.eval(x=xdat, params=self.result.params)
-        # y_eval_fit = self.eval()
-        
-        residuals = reduce_complex(ydat) - reduce_complex(y_eval_fit)
-
-        # if yerr is None and self.weights is not None:
-        #     yerr = 1.0/self.weights
-        if yerr is not None:
-            yerr = np.asarray(yerr)
-            if ydat.shape != yerr.shape:
-                # raise ValueError(f'Shape mismatch: {ydat.shape} != {yerr.shape}')
-                msg=f'Input data and error arrays are different: {ydat.shape} != {yerr.shape}'
-                logger.error(msg)
-                raise AttributeError(msg)
-            # ax.errorbar(
-            #     xdat, residuals,
-            #     yerr=propagate_err(ydat, yerr, parse_complex),
-            #     fmt=datafmt, label='resid', zorder=4, **data_kws
-            #     )
-            err = propagate_err(ydat, yerr, parse_complex)
-            if self.ny>1:
-                for i in range(self.ny):
-                    # y = residuals[:, i]
-                    # dy = err[:, i]
-                    ax.errorbar(xdat, residuals[:, i], yerr=err[:, i], fmt=datafmt, label=f'resid{i}', zorder=4, **data_kws)
-            else:
-                 for i in range(self.ny):
-                    # y = residuals[:, i]
-                    # dy = err[:, i]
-                    ax.errorbar(xdat, residuals[:, i], yerr=err[:, i], fmt=datafmt, label=f'resid', zorder=4, **data_kws)               
-        else:
-            # ax.plot(xdat, residuals, datafmt, label='resid', zorder=4, **data_kws)
-            if self.ny>1:
-                for i in range(self.ny):
-                    ax.plot(xdat, residuals[:, i], datafmt, label=f'resid{i}', zorder=4, **data_kws)
-            else:
-                ax.plot(xdat, residuals, datafmt, label='resid', zorder=4, **data_kws)
-
-        if title:
-            ax.set_title(title)
-        elif ax.get_title() == '':
-            ax.set_title('residuals')
-        if xlabel is None:
-            ax.set_xlabel('x')
-        else:
-            ax.set_xlabel(xlabel)
-        if ylabel is None:
-            ax.set_ylabel('residuals')
-        else:
-            ax.set_ylabel(ylabel)
-        ax.legend()
-        return ax
-    
-     
-    @_ensureMatplotlib
-    def plot(
-        self, datafmt='o', fitfmt='-', initfmt='--', xlabel=None, ylabel=None, yerr=None, numpoints=None, fig=None, 
-        data_kws=None,fit_kws=None, init_kws=None, ax_res_kws=None, ax_fit_kws=None,fig_kws=None, show_init=False, 
-        show_init_dat=False, parse_complex='abs', title=None
-        ):
-        """Plot the fit results and residuals using matplotlib.
-
-        The method will produce a matplotlib figure (if package available)
-        with both results of the fit and the residuals plotted. If the fit
-        model included weights, errorbars will also be plotted. To show
-        the initial conditions for the fit, pass the argument
-        ``show_init=True``.
-
-        Args:
-            datafmt (str, optional): Matplotlib format string for data points.
-            fitfmt (str, optional): Matplotlib format string for fitted curve.
-            initfmt (str, optional): Matplotlib format string for initial conditions for the fit.
-            xlabel (str, optional): Matplotlib format string for labeling the x-axis.
-            ylabel (str, optional): Matplotlib format string for labeling the y-axis.
-            yerr (numpy.ndarray, optional): Array of uncertainties for data array.
-            numpoints (int, optional): If provided, the final and initial fit curves are evaluated
-                not only at data points, but refined to contain `numpoints` points in total.
-            fig  (matplotlib.figure.Figure, optional): The figure to plot on. The default is None, 
-                which means use the current pyplot figure or create one if there is none.
-            data_kws (dict, optional): Keyword arguments passed to the plot function for data points.
-            fit_kws (dict, optional): Keyword arguments passed to the plot function for fitted curve.
-            init_kws (dict, optional): Keyword arguments passed to the plot function for the initial
-                conditions of the fit.
-            ax_res_kws (dict, optional): Keyword arguments for the axes for the residuals plot.
-            ax_fit_kws (dict, optional): Keyword arguments for the axes for the fit plot.
-            fig_kws (dict, optional): Keyword arguments for a new figure, if a new one is created.
-            show_init (bool, optional): Whether to show the initial conditions for the fit 
-                (default is False).
-            show_init_dat (bool, optional): Whether to plot raw data in the initial conditions for the fit 
-                (default is False).        
-            parse_complex ({'abs', 'real', 'imag', 'angle'}, optional): How to reduce complex data for plotting. 
-                Options are one of: `'abs'` (default), `'real'`, `'imag'`, or `'angle'`, which correspond to the 
-                NumPy functions with the same name.
-            title (str, optional): Matplotlib format string for figure title.
-
-        Returns:
-        matplotlib.figure.Figure
-
-        See Also
-        --------
-        LmfitGlobal.plot_init : Plot the init results using matplotlib.
-        LmfitGlobal.plot_fit :  Plot the fit results using matplotlib.
-        LmfitGlobal.plot_residuals : Plot the fit residuals using matplotlib.
-
-        Notes
-        -----
-        The method combines `LmfitGlobal.plot_fit`, `LmfitGlobal.plot_init` and
-        `LmfitGlobal.plot_residuals`.
-
-        If `yerr` is specified or if the fit model included weights, then
-        `matplotlib.axes.Axes.errorbar` is used to plot the data. If
-        `yerr` is not specified and the fit includes weights, `yerr` set
-        to ``1/self.weights``.
-
-        If model returns complex data, `yerr` is treated the same way that
-        weights are in this case.
-
-        If `fig` is None then `matplotlib.pyplot.figure(**fig_kws)` is
-        called, otherwise `fig_kws` is ignored.
-
+        plotwhat: 'data' | 'init' | 'fit' | 'resid'
         """
 
-        from matplotlib import pyplot as plt
-        if data_kws is None:
-            data_kws = {}
-        if fit_kws is None:
-            fit_kws = {}
-        if init_kws is None:
-            init_kws = {}
-        if ax_res_kws is None:
-            ax_res_kws = {}
-        if ax_fit_kws is None:
-            ax_fit_kws = {}
+        self.fitdata = self.get_fitdata(numpoints=numpoints)
+        fp = FitPlotter(fitdata=self.fitdata)
 
-        # make a square figure with side equal to the default figure's x-size
-        figxsize = plt.rcParams['figure.figsize'][0]
-        fig_kws_ = dict(figsize=(figxsize, figxsize))
-        if fig_kws is not None:
-            fig_kws_.update(fig_kws)
+        ax = fp._plot(
+            plotwhat, 
+            ax=ax, 
+            yerr=yerr,
+            xlabel=xlabel, 
+            ylabel=ylabel, 
+            xlim=xlim,
+            ylim=ylim,
+            plot_residual=plot_residual,
+            show=show,
+            data_kws=data_kws, 
+            init_kws=init_kws, 
+            fit_kws=fit_kws, 
+            resid_kws=resid_kws,
+            pretty_kw=pretty_kw
+        )
+    
 
-        if not isinstance(fig, plt.Figure):
-            fig = plt.figure(**fig_kws_)
+    def plot(self, plot_residual=True, **kws):
+        """Default plot: fit + residual."""
+        return self._plot_what("fit", plot_residual=plot_residual, **kws)
 
-        gs = plt.GridSpec(nrows=2, ncols=1, height_ratios=[1, 4])
-        ax_res = fig.add_subplot(gs[0], **ax_res_kws)
-        ax_fit = fig.add_subplot(gs[1], sharex=ax_res, **ax_fit_kws)
+    def plot_fit(self, plot_residual=True, **kws):
+        """Plot only the fitted model."""
+        return self._plot_what("fit", plot_residual=plot_residual, **kws)
 
-        # gs = plt.GridSpec(nrows=2, ncols=1, height_ratios=[4, 1])
-        # ax_fit = fig.add_subplot(gs[0], **ax_fit_kws)
-        # ax_res = fig.add_subplot(gs[1], **ax_res_kws)
+    def plot_data(self, plot_residual=False,**kws):
+        """Plot only the raw data."""
+        return self._plot_what("data", plot_residual=plot_residual, **kws)
 
-        self.plot_fit(
-            ax=ax_fit, datafmt=datafmt, fitfmt=fitfmt, yerr=yerr,initfmt=initfmt, 
-            xlabel=xlabel, ylabel=ylabel, numpoints=numpoints, data_kws=data_kws,
-            fit_kws=fit_kws, init_kws=init_kws, ax_kws=ax_fit_kws, show_init=show_init, 
-            show_init_dat=show_init_dat, parse_complex=parse_complex,title=''
-            )
-        
-        self.plot_residuals(
-            ax=ax_res, datafmt=datafmt, yerr=yerr, data_kws=data_kws, fit_kws=fit_kws,
-            ax_kws=ax_res_kws, parse_complex=parse_complex, title=title
-            )
-        
-        plt.setp(ax_res.get_xticklabels(), visible=False)
-        ax_fit.set_title('')
-        return fig
+    def plot_init(self, plot_residual=True, **kws):
+        """Plot only the initial guess."""
+        return self._plot_what("init", plot_residual=plot_residual, **kws)
 
-# %%
+    def plot_resid(self, plot_residual=False, **kws):
+        """Plot only the residuals."""
+        return self._plot_what("resid", plot_residual=plot_residual, **kws)
+    
+    def plot_model(self, plot_residual=True, **kws):
+        """Plot only the fitted model."""
+        return self._plot_what("fit", plot_residual=plot_residual, **kws)
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}("
+            f"ny={self.ny}, nc={self.nc}, N={self.N}, "
+            f"multicomponent={self.is_multicomponent}, "
+            f"multidataset={self.is_multidataset}"
+            f")"
+        )
 
 
+    def summary(self):
+        return (
+            f"{self.__class__.__name__}:\n"
+            f"  datasets       : {self.ny}\n"
+            f"  components     : {self.nc}\n"
+            f"  N points       : {self.N}\n"
+            f"  multicomponent : {self.is_multicomponent}\n"
+            f"  multidataset   : {self.is_multidataset}\n"
+            f"  nan_policy     : {self.nan_policy}"
+        )
 
+    def export(self):
+        return self
