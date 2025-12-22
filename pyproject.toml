@@ -1,0 +1,24 @@
+[project]
+name = "lmfit-global"
+version = "0.1.0"
+description = "Global fitting utilities built on top of lmfit"
+authors = [
+    { name = "MUHAMMAD MAIKUDI ISAH" }
+]
+readme = "README.md"
+requires-python = ">=3.10"
+
+# Unpinned dependencies for flexibility
+dependencies = [
+    "numpy",
+    "lmfit",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+ml = ["scikit-learn"]
+plot = ["palettable"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
