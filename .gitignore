@@ -10,7 +10,7 @@ lmfit_global/lmfit_global/*.ipynb
 lmfit_global/lmfit_global/__pycache__/
 lmfit_global/lmfit_global/*.Identifier
 lmfit_global/lmfit_global/globutils.*
-lmfit_global/lmfit_global/lmfit_global_v1.*
+lmfit_global/lmfit_global/lmfit_global_v*
 lmfit_global/lmfit_global/lmfit_global_refactor.*
 lmfit_global/lmfit_global/lmfit_global_cleaner.*
 lmfit_global/lmfit_global/util/*.pyc
