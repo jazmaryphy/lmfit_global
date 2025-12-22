@@ -5,3 +5,11 @@ __pycache__/
 lmfit-global/
 tests/
 examples/
+lmfit_global/lmfit_global/*.pyc
+lmfit_global/lmfit_global/*.ipynb
+lmfit_global/lmfit_global/__pycache__/
+lmfit_global/lmfit_global/*.Identifier
+lmfit_global/lmfit_global/globutils.*
+lmfit_global/lmfit_global/util/*.pyc
+lmfit_global/lmfit_global/util/*.ipynb
+lmfit_global/lmfit_global/util/__pycache__/
