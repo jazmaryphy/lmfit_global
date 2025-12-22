@@ -3,7 +3,7 @@ __pycache__/
 *.log
 .venv/
 lmfit-global/
-tests/
+tests_codes/
 examples/
 lmfit_global/lmfit_global/*.pyc
 lmfit_global/lmfit_global/*.ipynb
