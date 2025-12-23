@@ -428,7 +428,7 @@ def lmfit_report(
             add(f"    R-squared          = {getfloat_attr(result, 'rsquared')}")
         else:  # MAKE IT SIMPLE
             if rsquared is not None:
-                add(f"    R-squared          = {gformat(rsquared, length=11)}")
+                add(f"    R-squared          ={gformat(rsquared, length=11)}")
         ### --- (EXPERIMENTAL) THIS PART MAY NEED IMPROVEMENT LATER --- ###
         # else:  ## ADD THIS PART
         #     mean_val = r2_dict.get('mean', None)
