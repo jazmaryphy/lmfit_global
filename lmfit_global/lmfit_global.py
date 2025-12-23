@@ -9,8 +9,8 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterable, List, Optional, Any
 
 # %%
-from util.parameters import normalize_parameter_specs, _UNSET
-from util.reporting import (
+from .util.parameters import normalize_parameter_specs, _UNSET
+from .util.reporting import (
     wrap_expr,
     build_expr,
     pretty_expr,
@@ -19,13 +19,13 @@ from util.reporting import (
     pretty_print_params,
     get_default_logger
 )
-from util.plotting import (
+from .util.plotting import (
     # pretty_plot,
     # get_pretty_axarray,
     # plot_from_fitdata,
     FitPlotter
 )
-from util.utils import(
+from .util.utils import(
     parse_xrange
 )
 
@@ -1884,3 +1884,145 @@ class LmfitGlobal:
 
     def export(self):
         return self
+
+# %%
+def main():
+    import numpy as np
+    from scipy.special import erf, erfc
+
+    # tiny had been numpy.finfo(numpy.float64).eps ~=2.2e16.
+    # here, we explicitly set it to 1.e-15 == numpy.finfo(numpy.float64).resolution
+    tiny = 1.0e-15
+
+    def step(x, amplitude, center, sigma, form='linear'):
+    # def step(x, amplitude=1.0, center=0.0, sigma=1.0, form='linear'):
+        """Return a step function.
+
+        Starts at 0.0, ends at `sign(sigma)*amplitude`, has a half-max at
+        `center`, rising or falling with `form`:
+
+        - `'linear'` (default) = amplitude * min(1, max(0, arg + 0.5))
+        - `'atan'`, `'arctan'` = amplitude * (0.5 + atan(arg)/pi)
+        - `'erf'`              = amplitude * (1 + erf(arg))/2.0
+        - `'logistic'`         = amplitude * [1 - 1/(1 + exp(arg))]
+
+        where ``arg = (x - center)/sigma``.
+
+        Note that ``sigma > 0`` gives a rising step, while ``sigma < 0`` gives
+        a falling step.
+        """
+        out = np.sign(sigma)*(x - center)/max(tiny*tiny, abs(sigma))
+
+        if form == 'erf':
+            out = 0.5*(1 + erf(out))
+        elif form == 'logistic':
+            out = 1. - 1./(1. + np.exp(out))
+        elif form in ('atan', 'arctan'):
+            out = 0.5 + np.arctan(out)/np.pi
+        elif form == 'linear':
+            out = np.minimum(1, np.maximum(0, out + 0.5))
+        else:
+            msg = (f"Invalid value ('{form}') for argument 'form'; should be one "
+                "of 'erf', 'logistic', 'atan', 'arctan', or 'linear'.")
+            raise ValueError(msg)
+
+        return amplitude*out
+
+
+    def linear(x, slope=1.0, intercept=0.0):
+        """Return a linear function.
+
+        linear(x, slope, intercept) = slope * x + intercept
+
+        """
+        return slope * x + intercept
+
+
+    x = np.linspace(0, 10, 201)
+    y = np.ones_like(x)
+    y[:48] = 0.0
+    y[48:77] = np.arange(77-48)/(77.0-48)
+    np.random.seed(0)
+    y = 110.2 * (y + 9e-3*np.random.randn(x.size)) + 12.0 + 2.22*x
+    xy_dat = np.column_stack([x, y])
+
+
+    # data dict
+    data_dict = {
+        'xy': xy_dat,         # data_xy, i.e numpy.column_stack([x, y_0, y_1, ..., y_n])
+        'xrange': None, #(1, 8)    # x range in (min, max) of the data range to fit, default is None
+        }
+
+
+    func_lst = [
+        {
+            'func_name': step,
+            'init_params' : {
+                'amplitude': {'value':100, 'vary':True, 'min':-np.inf, 'max':+np.inf},
+                'center': {'value':2.5, 'min':0, 'max':10},
+                'sigma': {'value':1, },
+            },
+            'func_kws': {'form': 'erf'}   # <-- Additional keyword arguments to pass to model function `'func_name'`.
+            # YOU CAN PLAY AROUND WITH DIFFERENT 'form' AND SEE THE BEHAVIOR OF THE FIT
+        },
+        {
+            'func_name': linear,
+            'init_params' : {
+                'slope': {'value':0.0, 'vary':True, 'min':-np.inf, 'max':+np.inf},
+                'intercept': {'value':0.01, },
+            },
+            'func_kws': {}   # <-- Additional keyword arguments to pass to model function `'func_name'`.
+        },
+    ]
+
+    # function dict
+    function_dict = {
+        'theory': func_lst,
+        'theory_connectors': ['+'],
+    }
+
+
+    # """
+    # # --- The `theory_connectors` (list of str): 
+    #     A list of binary operators (e.g., '+', '-', '*', '/') that define how to combine 
+    #     the theory functions listed in 'theory'. Each operator connects one function to the next 
+    #     in left-to-right order. 
+        
+    #     For example: 
+    #     - ['+', '+'] means: theory[0] + theory[1] + theory[2].
+
+    #     - ['+', '*'] means: theory[0] + theory[1] * theory[2].
+
+    #     The number of connectors must be exactly one less than the number of theory functions.
+    #     The ONLY (so-far) supported operators are: '+', '-', '*', '/'.
+    # """
+
+
+    # items 
+    items = {
+        'data': data_dict,              # 1. data (see above)
+        'functions': function_dict,     # 2. thoery (see above)
+    }
+
+
+    lg = LmfitGlobal(items)
+
+    lg.init_params
+    # lg.set_xrange(xmin=None, xmax=8)
+
+    lg.fit(verbose=False)
+    # lg.result.params
+
+    # lg.eval_components()
+    # lg.eval_components().keys()
+
+    # lg.rsquared
+    lg.report()
+
+    pretty_kw={'width': 6, 'height':6, 'dpi':100}
+    lg.plot(plot_residual=True, show=True, xlabel='x', ylabel='y', pretty_kw=pretty_kw)
+
+if __name__ == "__main__":
+    main()
+
+
