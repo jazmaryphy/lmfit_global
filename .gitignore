@@ -1,19 +1,33 @@
+# Python cache
 __pycache__/
-*.ipynb
 *.pyc
+
+# notebook
+*.ipynb
+
+# Logs
 *.log
+
+# Virtual environments
 .venv/
-lmfit-global/
+
+# Build artifacts (optional)
+lmfit-global/*
+
+# Optional: ignore experimental folders
 tests_codes/
 old_examples/
-lmfit_global/lmfit_global/*.pyc
-lmfit_global/lmfit_global/*.ipynb
-lmfit_global/lmfit_global/__pycache__/
-lmfit_global/lmfit_global/*.Identifier
+
+# Ignore temporary or experimental files inside the package
 lmfit_global/lmfit_global/globutils.*
 lmfit_global/lmfit_global/lmfit_global_v*
+lmfit_global/lmfit_global/*-lmfit*
+lmfit_global/lmfit_global/__pycache__/
+lmfit_global/lmfit_global/*.Identifier
 lmfit_global/lmfit_global/lmfit_global_refactor.*
 lmfit_global/lmfit_global/lmfit_global_cleaner.*
-lmfit_global/lmfit_global/util/*.pyc
+
+# Ignore notebooks inside package (optional)
+lmfit_global/lmfit_global/*.ipynb
 lmfit_global/lmfit_global/util/*.ipynb
 lmfit_global/lmfit_global/util/__pycache__/
