@@ -1,10 +1,11 @@
 __pycache__/
+*.ipynb
 *.pyc
 *.log
 .venv/
 lmfit-global/
 tests_codes/
-examples/
+old_examples/
 lmfit_global/lmfit_global/*.pyc
 lmfit_global/lmfit_global/*.ipynb
 lmfit_global/lmfit_global/__pycache__/
