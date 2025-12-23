@@ -18,6 +18,12 @@ lmfit-global/*
 tests_codes/
 old_examples/
 
+# experimental files
+lmfit_global/01-lmfit_global.py
+lmfit_global/02-lmfit_global.py
+lmfit_global/lmfit_global_v*.py
+
+
 # Ignore temporary or experimental files inside the package
 lmfit_global/lmfit_global/globutils.*
 lmfit_global/lmfit_global/lmfit_global_v*
