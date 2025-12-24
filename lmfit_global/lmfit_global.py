@@ -37,30 +37,6 @@ except Exception as exc:  # pragma: no cover - runtime dependency
     raise ImportError("lmfit is required. Install with `pip install lmfit`") from exc
 
 # %%
-_VALID_CONNECTORS = {
-    '+': operator.add,
-    '-': operator.sub,
-    '*': operator.mul,
-    '/': operator.truediv,
-}
-
-
-# _ALLOWED_HINT_KEYS = {
-#     "value", "vary", 
-#     "min", "max", 
-#     "expr", "brute_step"
-#     }
-
-_LMFIT_INIT_PARAMETER_DEFAULTS = {
-            'value': -np.inf, 'vary': True,
-            'min': -np.inf, 'max': +np.inf,
-            'expr': None, 'brute_step': None
-        }
-
-_ALLOWED_NUMERIC = (int, float)
-
-
-
 @dataclass
 class ModelSpec:
     func: Callable
@@ -68,24 +44,29 @@ class ModelSpec:
     func_kws: Dict[str, object] = field(default_factory=dict)
 
 
-@dataclass
+@dataclass(slots=True)
 class FitData:
-    x_data: np.ndarray
-    y_data: np.ndarray
-    x_model: np.ndarray
-    y_init: np.ndarray
-    y_fit: np.ndarray | None
-    resid_init: np.ndarray
-    resid_fit: np.ndarray | None
+    x_data: np.ndarray                                # raw data
+    y_data: np.ndarray                                # raw data
+    x_model: np.ndarray                               # model grid (same as data or dense)
+    y_init: np.ndarray                                # initial model
+    y_fit: np.ndarray | None                          # best-fit model (optional)
+    resid_init: np.ndarray                            # initial residual
+    resid_fit: np.ndarray | None                      # best-fit model residual (optional)
     components: Optional[
-        Dict[int, Dict[str, Dict[str, np.ndarray]]]
-    ] = None
+        Dict[int, Dict[str, Dict[str, np.ndarray]]]  
+    ] = None                                         # multicomponent results (optional)
+    rsquared: Optional[float] = None                 # diagnostics
+
 
     # ---- derived properties ----
-
     @property
     def has_fit(self) -> bool:
         return self.y_fit is not None
+
+    @property
+    def ny(self) -> int:
+        return self.y_data.shape[1]
 
     @property
     def has_components(self) -> bool:
@@ -111,6 +92,112 @@ class FitData:
         for comps in self.components.values():
             names.update(comps.keys())
         return sorted(names)
+
+
+    # -----------------
+    # factory
+    # -----------------
+    @classmethod
+    def from_lmfitglobal(
+        cls,
+        lg: "LmfitGlobal",
+        *,
+        numpoints: int | None = None,
+    ) -> "FitData":
+        """
+        Build FitData from an LmfitGlobal instance.
+
+        Notes
+        -----
+        - Residuals are always computed on the data grid
+        - Dense grid is used only for visualization
+        """
+        # --- raw data ---
+        x_data = np.asarray(lg.x_data, dtype=float)
+        y_data = np.asarray(lg.y_data, dtype=float)
+
+        if y_data.ndim != 2:
+            raise ValueError("y_data must be 2D (N, ny)")
+
+        if len(x_data) != y_data.shape[0]:
+            raise ValueError(
+                f"x_data length ({len(x_data)}) != y_data rows ({y_data.shape[0]})"
+            )
+
+        # --- model grid ---
+        use_dense = numpoints is not None and x_data.size < numpoints
+        x_model = (
+            np.linspace(x_data.min(), x_data.max(), numpoints)
+            if use_dense else x_data
+        )
+
+        # --- initial model ---
+        y_init_data = lg.eval(x=x_data, params=lg.init_params)
+        y_init_model = (
+            y_init_data if not use_dense
+            else lg.eval(x=x_model, params=lg.init_params)
+        )
+        resid_init = y_data - y_init_data
+
+        # --- best fit (optional) ---
+        y_fit_model = None
+        resid_fit = None
+        components = None
+        rsquared = None
+
+        if getattr(lg, "fit_success", False):
+            y_fit_data = lg.eval(x=x_data, params=lg.result.params)
+            resid_fit = y_data - y_fit_data
+            y_fit_model = (
+                y_fit_data if not use_dense
+                else lg.eval(x=x_model, params=lg.result.params)
+            )
+
+            rsquared = lg.rsquared
+
+            if lg.is_multicomponent:
+                components = lg.eval_components(
+                    x_data=x_data,
+                    x_model=x_model,
+                    params=lg.result.params,
+                )
+
+        # print(f'numpoints = {numpoints} and len =  {len(x_model)}')
+
+        return cls(
+            x_data=x_data,
+            y_data=y_data,
+            x_model=x_model,
+            y_init=y_init_model,
+            resid_init=resid_init,
+            y_fit=y_fit_model,
+            resid_fit=resid_fit,
+            components=components,
+            rsquared=rsquared,
+        )
+
+# %%
+_VALID_CONNECTORS = {
+    '+': operator.add,
+    '-': operator.sub,
+    '*': operator.mul,
+    '/': operator.truediv,
+}
+
+
+# _ALLOWED_HINT_KEYS = {
+#     "value", "vary", 
+#     "min", "max", 
+#     "expr", "brute_step"
+#     }
+
+_LMFIT_INIT_PARAMETER_DEFAULTS = {
+            'value': -np.inf, 'vary': True,
+            'min': -np.inf, 'max': +np.inf,
+            'expr': None, 'brute_step': None
+        }
+
+_ALLOWED_NUMERIC = (int, float)
 
 
 
@@ -248,36 +335,20 @@ class LmfitGlobal:
         self.result: Optional[lmfit.MinimizerResult] = None
         self.fit_success: bool = False
         self.rsquared: Optional[float] = None
-        self.fitdata: FitData | None = None
 
-        
-        # parse and validate data
-        # self._parse_data()
-        # self._parse_functions()
-        # self._pretty_expr()
+        # self._fitdata: FitData | None = None
+        # self._fitdata_numpoints: int | None = None
 
-        # build parameters and composite model
-        # self.logger.info("LmfitGlobal initialized...")
-        # self.init_params = lmfit.Parameters()
-        # self._create_lmfit_models()
-        # self._build_lmfit_composite_model()
-        # self._init_parameters()
-        # self._eval()
+        self._fit_counter: int = 0
+        self._cached_fitdata: FitData | None = None
+        self._cached_fitdata_numpoints: int | None = None
+        self._cached_fitdata_fit_counter: int | None = None
+
 
         # lifecycle
         self._parse_inputs()
         self._build_lmfit_backend()
 
-
-    #     # Ensure at least one handler exists (otherwise nothing prints!)
-    #     if not self.logger.handlers:
-    #         self._setup_default_handler()
-
-    # def _setup_default_handler(self):
-    #     """Attach a simple console handler if none exists."""
-    #     handler = logging.StreamHandler()
-    #     handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
-    #     self.logger.addHandler(handler)
 
 
     def _log_err(self, msg, exc=ValueError):
@@ -1290,6 +1361,10 @@ class LmfitGlobal:
     # -----------------------------
     # fitting API
     # -----------------------------
+    def _invalidate_fit_cache(self):
+        self._cached_fitdata = None
+
+
     def fit(
         self,
         method: Optional[str] = None,
@@ -1349,8 +1424,14 @@ class LmfitGlobal:
         self._post_fit(verbose=verbose, logger=logger)
         # elapsed = time.perf_counter() - t0
 
-        # --- create canonical FitData once ---
-        self.fitdata = self.build_fit_data(numpoints=None)
+        # # --- create canonical FitData once ---
+        # self._fitdata = self.build_fit_data(numpoints=None)
+
+        # invalidate cached fitdata
+        # ---- cache invalidation ----
+        self._fit_counter += 1
+        self._cached_fitdata = None
+        # self._invalidate_fit_cache()  # REMOVED
 
         # --- Post-fit log summary ---
         self._log_fit_summary(elapsed=elapsed, logger=self.logger, precision=8)
@@ -1631,24 +1712,49 @@ class LmfitGlobal:
             ),
         )
 
-    def get_fitdata(self, numpoints: int | None = None) -> FitData:
+    
+    def get_fitdata(
+        self,
+        numpoints: int | None = None,
+        *,
+        force: bool = False,
+    ) -> FitData:
         """
-        Return FitData.
+        Return cached FitData for # Plotting / visualization.
 
         - If numpoints is None: return the canonical fitdata created after fitting.
         - If numpoints is provided: return a plotting-ready FitData with dense model grid.
+
+        Rebuilds FitData if:
+        - not cached yet
+        - numpoints changed
+        - fit() was re-run
+        - force=True
         """
-        if not getattr(self, "fit_success", False):
-            raise RuntimeError("Fit has not been performed or was unsuccessful")
 
-        # Canonical fitdata
-        if numpoints is None:
-            if not hasattr(self, "fitdata"):
-                self.fitdata = self.build_fit_data(numpoints=None)
-            return self.fitdata
+        rebuild = (
+            force
+            or self._cached_fitdata is None
+            or self._cached_fitdata_numpoints != numpoints
+            or self._cached_fitdata_fit_counter != self._fit_counter
+        )
 
-        # Plotting / visualization fitdata
-        return self.build_fit_data(numpoints=numpoints)
+        if rebuild:
+            self.logger.debug(
+                "Building FitData "
+                f"(numpoints={numpoints}, fit_counter={self._fit_counter}, force={force})"
+            )
+
+            self._cached_fitdata = FitData.from_lmfitglobal(
+                self,
+                numpoints=numpoints,
+            )
+            self._cached_fitdata_numpoints = numpoints
+            self._cached_fitdata_fit_counter = self._fit_counter
+
+        return self._cached_fitdata
+
+
 
 
     # -------------------------------
@@ -1849,7 +1955,7 @@ class LmfitGlobal:
         """Plot only the raw data."""
         return self._plot_what("data", plot_residual=plot_residual, **kws)
 
-    def plot_init(self, plot_residual=True, **kws):
+    def plot_init(self, plot_residual=False, **kws):
         """Plot only the initial guess."""
         return self._plot_what("init", plot_residual=plot_residual, **kws)
 
@@ -1888,88 +1994,37 @@ class LmfitGlobal:
 # %%
 def main():
     import numpy as np
-    from scipy.special import erf, erfc
+    import matplotlib.pyplot as plt
 
-    # tiny had been numpy.finfo(numpy.float64).eps ~=2.2e16.
-    # here, we explicitly set it to 1.e-15 == numpy.finfo(numpy.float64).resolution
-    tiny = 1.0e-15
-
-    def step(x, amplitude, center, sigma, form='linear'):
-    # def step(x, amplitude=1.0, center=0.0, sigma=1.0, form='linear'):
-        """Return a step function.
-
-        Starts at 0.0, ends at `sign(sigma)*amplitude`, has a half-max at
-        `center`, rising or falling with `form`:
-
-        - `'linear'` (default) = amplitude * min(1, max(0, arg + 0.5))
-        - `'atan'`, `'arctan'` = amplitude * (0.5 + atan(arg)/pi)
-        - `'erf'`              = amplitude * (1 + erf(arg))/2.0
-        - `'logistic'`         = amplitude * [1 - 1/(1 + exp(arg))]
-
-        where ``arg = (x - center)/sigma``.
-
-        Note that ``sigma > 0`` gives a rising step, while ``sigma < 0`` gives
-        a falling step.
-        """
-        out = np.sign(sigma)*(x - center)/max(tiny*tiny, abs(sigma))
-
-        if form == 'erf':
-            out = 0.5*(1 + erf(out))
-        elif form == 'logistic':
-            out = 1. - 1./(1. + np.exp(out))
-        elif form in ('atan', 'arctan'):
-            out = 0.5 + np.arctan(out)/np.pi
-        elif form == 'linear':
-            out = np.minimum(1, np.maximum(0, out + 0.5))
-        else:
-            msg = (f"Invalid value ('{form}') for argument 'form'; should be one "
-                "of 'erf', 'logistic', 'atan', 'arctan', or 'linear'.")
-            raise ValueError(msg)
-
-        return amplitude*out
+    def gaussian(x, amp, cen, wid):
+        """1-d gaussian: gaussian(x, amp, cen, wid)"""
+        return (amp / (np.sqrt(2*np.pi) * wid)) * np.exp(-(x-cen)**2 / (2*wid**2))
 
 
-    def linear(x, slope=1.0, intercept=0.0):
-        """Return a linear function.
+    rng = np.random.default_rng(123)
+    x = np.linspace(0, 10, 101) # x grid
+    y = gaussian(x, amp=8, cen=6, wid=0.5) # clean signal
+    sigma = 0.02 * y.max()  # noise (relative to peak)
+    y = y + rng.normal(scale=sigma, size=x.shape)   # add noise
+    # yerr = np.full_like(y, sigma) # uncertainties (constant here, but realistic)
 
-        linear(x, slope, intercept) = slope * x + intercept
-
-        """
-        return slope * x + intercept
-
-
-    x = np.linspace(0, 10, 201)
-    y = np.ones_like(x)
-    y[:48] = 0.0
-    y[48:77] = np.arange(77-48)/(77.0-48)
-    np.random.seed(0)
-    y = 110.2 * (y + 9e-3*np.random.randn(x.size)) + 12.0 + 2.22*x
-    xy_dat = np.column_stack([x, y])
+    xy = np.column_stack([x, y])  # stack xy data
 
 
     # data dict
     data_dict = {
-        'xy': xy_dat,         # data_xy, i.e numpy.column_stack([x, y_0, y_1, ..., y_n])
-        'xrange': None, #(1, 8)    # x range in (min, max) of the data range to fit, default is None
+        'xy': xy,         # data_xy, i.e numpy.column_stack([x, y_0, y_1, ..., y_n])
+        'xrange': None    # x range in (min, max) of the data range to fit, default is None
         }
 
 
     func_lst = [
         {
-            'func_name': step,
+            'func_name': gaussian,
             'init_params' : {
-                'amplitude': {'value':100, 'vary':True, 'min':-np.inf, 'max':+np.inf},
-                'center': {'value':2.5, 'min':0, 'max':10},
-                'sigma': {'value':1, },
-            },
-            'func_kws': {'form': 'erf'}   # <-- Additional keyword arguments to pass to model function `'func_name'`.
-            # YOU CAN PLAY AROUND WITH DIFFERENT 'form' AND SEE THE BEHAVIOR OF THE FIT
-        },
-        {
-            'func_name': linear,
-            'init_params' : {
-                'slope': {'value':0.0, 'vary':True, 'min':-np.inf, 'max':+np.inf},
-                'intercept': {'value':0.01, },
+                'amp': {'value':5, },
+                'cen': {'value':5, },
+                'wid': {'value':1, },
             },
             'func_kws': {}   # <-- Additional keyword arguments to pass to model function `'func_name'`.
         },
@@ -1978,7 +2033,7 @@ def main():
     # function dict
     function_dict = {
         'theory': func_lst,
-        'theory_connectors': ['+'],
+        'theory_connectors': None,
     }
 
 
@@ -1995,13 +2050,15 @@ def main():
 
     #     The number of connectors must be exactly one less than the number of theory functions.
     #     The ONLY (so-far) supported operators are: '+', '-', '*', '/'.
+
+    # NOTE: Here in this  case is None or []
     # """
 
 
     # items 
     items = {
         'data': data_dict,              # 1. data (see above)
-        'functions': function_dict,     # 2. thoery (see above)
+        'functions': function_dict,     # 2. theory (see above)
     }
 
 
@@ -2019,8 +2076,16 @@ def main():
     # lg.rsquared
     lg.report()
 
-    pretty_kw={'width': 6, 'height':6, 'dpi':100}
-    lg.plot(plot_residual=True, show=True, xlabel='x', ylabel='y', pretty_kw=pretty_kw)
+    # --- fancy plots ---
+    # pretty_kw={'width': 6, 'height':6, 'dpi':100} # width and height and dpi of figure
+    # lg.plot_init(show=True, numpoints=1000, xlabel='x', ylabel='y', pretty_kw=pretty_kw)
+    # lg.plot(plot_residual=True, show=True, numpoints=None, xlabel='x', ylabel='y', pretty_kw=pretty_kw)
+
+    plt.plot(xy[:, 0], xy[:, 1], 'o')
+    plt.plot(xy[:, 0], lg.init_fit, '--', label='initial fit')
+    plt.plot(xy[:, 0], lg.best_fit, '-', label='best fit')
+    plt.legend()
+    plt.show()
 
 if __name__ == "__main__":
     main()
