@@ -1834,24 +1834,37 @@ class LmfitGlobal:
             return
 
         # --- Multiple datasets, per-dataset + global ---
+        # if raw is not None:
+        #     raw = np.atleast_1d(raw)
+        #     for i, val in enumerate(raw):
+        #         logger.info(f"  R-squared [data {i:02d}] = {val:.{precision}f}")
+
         if raw is not None:
             raw = np.atleast_1d(raw)
-            for i, val in enumerate(raw):
-                logger.info(f"  R-squared [data {i:02d}] = {val:.{precision}f}")
+            n = len(raw)
+            idx_width = len(str(n))
+            logger.info("R-squared per dataset:")
+            for i, val in enumerate(raw, start=0):
+                logger.info(
+                    f"  R-squared data[:, {i:>{idx_width}d}] = {val:.{precision}f}"
+                )
+
 
         # --- Global R-squared logic ---
         # tolerances for comparing mean and weighted R-squared
         atol, rtol = 1e-10, 1e-8
         if mean is not None and weighted is not None:
             if np.isclose(mean, weighted, atol=atol, rtol=rtol):
-                logger.info(f"  R-squared (global)   = {mean:.{precision}f}")
+                # logger.info(f"  R-squared (global)  = {mean:.{precision}f}")
+                logger.info(f"  R-squared           = {mean:.{precision}f}")
             else:
-                logger.info(f"  R-squared (mean)     = {mean:.{precision}f}")
-                logger.info(f"  R-squared (weighted) = {weighted:.{precision}f}")
+                logger.info(f"  R-squared (mean)    = {mean:.{precision}f}")
+                logger.info(f"  R-squared (weighted)= {weighted:.{precision}f}")
         else:
             val = mean if mean is not None else weighted
             if val is not None:
-                logger.info(f"  R-squared (global)   = {val:.{precision}f}")
+                # logger.info(f"  R-squared (global)  = {val:.{precision}f}")
+                logger.info(f"  R-squared           = {val:.{precision}f}")
 
 
     def fit_report(self, params, **kws):
