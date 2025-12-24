@@ -202,7 +202,18 @@ _ALLOWED_NUMERIC = (int, float)
 
 
 class LmfitGlobal:
-    """_summary_
+    """
+    Global fitting framework built on top of lmfit.
+
+    This class provides a high-level interface for performing global fits
+    to one or more datasets using lmfit. It supports:
+    
+    - Multiple datasets fitted simultaneously
+    - Multi-component theoretical models
+    - Shared and dataset-specific parameters
+    - Flexible model composition via algebraic connectors
+    - Optional data sub-selection and NaN handling
+    - Evaluation of model curves, residuals, and fit diagnostics
     """
 
 
