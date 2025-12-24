@@ -19,8 +19,8 @@ tests_codes/
 old_examples/
 
 # experimental files
-lmfit_global/01-lmfit_global.py
-lmfit_global/02-lmfit_global.py
+lmfit_global/*-lmfit_global.py
+lmfit_global/*-lmfit_global.ipynb
 lmfit_global/lmfit_global_v*.py
 
 
