@@ -58,6 +58,14 @@ class FitData:
     ] = None                                         # multicomponent results (optional)
     rsquared: Optional[float] = None                 # diagnostics
 
+    """
+    # --- components ---
+    # single-dataset:
+    #   {component_name: {"data": ndarray, "model": ndarray}}
+    #
+    # multi-dataset:
+    #   {dataset_index: {component_name: {"data": ndarray, "model": ndarray}}}
+    """
 
     # ---- derived properties ----
     @property
@@ -81,17 +89,25 @@ class FitData:
         return self.components is not None
 
     @property
-    def is_multicomponent(self) -> bool:
-        return self.has_components and any(self.components.values())
+    def component_names(self) -> list[str]:
+        if not self.components:
+            return []
+
+        first_val = next(iter(self.components.values()))
+
+        # Multi-dataset case: {dataset_idx: {component_name: {...}}}
+        if isinstance(first_val, dict) and "data" not in first_val:
+            names = set()
+            for comps in self.components.values():
+                names.update(comps.keys())
+            return sorted(names)
+
+        # Single-dataset case
+        return sorted(self.components.keys())
 
     @property
-    def component_names(self) -> list[str]:
-        if not self.has_components:
-            return []
-        names = set()
-        for comps in self.components.values():
-            names.update(comps.keys())
-        return sorted(names)
+    def is_multicomponent(self) -> bool:
+        return len(self.component_names) > 1
 
     @property
     def nc(self) -> int:
