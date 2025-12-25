@@ -69,20 +69,20 @@ class FitData:
         return self.y_data.shape[1]
 
     @property
+    def n_datasets(self) -> int:
+        return self.ny
+    
+    @property
+    def is_multidataset(self) -> bool:
+        return self.ny > 1
+
+    @property
     def has_components(self) -> bool:
         return self.components is not None
 
     @property
     def is_multicomponent(self) -> bool:
         return self.has_components and any(self.components.values())
-
-    @property
-    def n_datasets(self) -> int:
-        return len(self.components) if self.has_components else 1
-    
-    @property
-    def is_multidataset(self) -> bool:
-        return self.n_datasets > 1
 
     @property
     def component_names(self) -> list[str]:
@@ -93,6 +93,13 @@ class FitData:
             names.update(comps.keys())
         return sorted(names)
 
+    @property
+    def nc(self) -> int:
+        return len(self.component_names)
+
+    @property
+    def n_components(self) -> int:
+        return self.nc
 
     # -----------------
     # factory
