@@ -32,7 +32,8 @@ lmfit_global/lmfit_global/__pycache__/
 lmfit_global/lmfit_global/*.Identifier
 lmfit_global/lmfit_global/lmfit_global_refactor.*
 lmfit_global/lmfit_global/lmfit_global_cleaner.*
-lmfit_global/lmfit_global/util/*-utils.*
+lmfit_global/lmfit_global/util/*-utils.py
+lmfit_global/lmfit_global/util/*-utils.ipynb
 
 # Ignore notebooks inside package (optional)
 lmfit_global/lmfit_global/*.ipynb
