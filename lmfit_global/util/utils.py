@@ -1,6 +1,7 @@
 # %%
 import inspect
 import numpy as np
+from typing import Iterable, Callable, Sequence
 
 # %%
 def normalize_xrange(xrange_):
@@ -96,160 +97,6 @@ def parse_xrange(xrange_, *, xdata=None, clip=True, logger=None):
             xmax = dmax
 
     return xmin, xmax
-
-# %%
-# # -----------------------------------------------------------
-# # 1. Build the data dictionary
-# # -----------------------------------------------------------
-# def make_data_dict(xy, xrange=None):
-#     """
-#     Create a standardized data dictionary for LmfitGlobal.
-
-#     Args:
-#         xy (array-like): 2D array, shape (N, 1 + n_datasets).
-#                         Column 0 = x
-#                         Columns 1..n = y datasets.
-#         xrange (tuple or None): (xmin, xmax) to restrict fitting range.
-
-#     Returns:
-#         dict: valid data dictionary.
-#     """
-#     xy = np.asarray(xy)
-#     if xy.ndim != 2 or xy.shape[1] < 2:
-#         raise ValueError("`xy` must be a 2D array with columns [x, y1, y2, ...].")
-
-#     if xrange is not None:
-#         if not (isinstance(xrange, (tuple, list)) and len(xrange) == 2):
-#             raise ValueError("`xrange` must be tuple/list: (xmin, xmax).")
-
-#     return {
-#         "xy": xy,
-#         "xrange": xrange,
-#     }
-
-
-# # -----------------------------------------------------------
-# # 2. Build the function dictionary
-# # -----------------------------------------------------------
-# def make_function_dict(func_list, connectors=None):
-#     """
-#     Build the function specification dictionary for LmfitGlobal.
-
-#     Args:
-#         func_list (list of dict):
-#             Each dict must contain:
-#                 - 'func_name': callable
-#                 - 'init_params': dict of parameter hints
-#                 - 'func_kws': dict of extra keyword arguments
-
-#         connectors (list of str or None):
-#             Operators connecting the models: ['+', '-', '*', '/'].
-#             Must have length == len(func_list) - 1.
-#             If None and only one function, auto-set to [].
-
-#     Returns:
-#         dict: function dictionary ready for LmfitGlobal
-#     """
-#     # ---- validation ----
-#     if not isinstance(func_list, list) or len(func_list) == 0:
-#         raise ValueError("func_list must be a non-empty list of model specs.")
-
-#     for entry in func_list:
-#         if "func_name" not in entry:
-#             raise ValueError("Each function spec must include 'func_name'")
-#         if not callable(entry["func_name"]):
-#             raise TypeError("'func_name' must be a Python callable (a function).")
-
-#         if "init_params" not in entry or not isinstance(entry["init_params"], dict):
-#             raise ValueError("'init_params' must be a dict of parameter specifications.")
-
-#         if "func_kws" not in entry:
-#             entry["func_kws"] = {}
-#         elif not isinstance(entry["func_kws"], dict):
-#             raise ValueError("'func_kws' must be a dict.")
-
-#         # Signature safety check:
-#         _check_function_signature(entry["func_name"], entry["init_params"])
-
-#     # ---- connectors ----
-#     if connectors is None:
-#         connectors = [] if len(func_list) == 1 else None
-
-#     if connectors is None:
-#         raise ValueError(
-#             "connectors must be provided for multi-function models.\n"
-#             f"Expected list of length {len(func_list)-1}."
-#         )
-
-#     if not isinstance(connectors, list):
-#         raise TypeError("connectors must be a list of operator strings.")
-
-#     if len(connectors) != len(func_list) - 1:
-#         raise ValueError(
-#             f"Number of connectors ({len(connectors)}) must be n_functions - 1 "
-#             f"({len(func_list)-1})."
-#         )
-
-#     allowed_ops = {"+", "-", "*", "/"}
-#     for op in connectors:
-#         if op not in allowed_ops:
-#             raise ValueError(f"Operator '{op}' not allowed. Use {allowed_ops}.")
-
-#     return {
-#         "theory": func_list,
-#         "theory_connectors": connectors,
-#     }
-
-
-# # -----------------------------------------------------------
-# # 3. Signature checking helper
-# # -----------------------------------------------------------
-# def _check_function_signature(func, init_params):
-#     """
-#     Ensure the function signature matches the provided parameter names.
-#     Does NOT enforce strict equality but warns if names mismatch.
-#     """
-#     sig = inspect.signature(func)
-#     allowed = list(sig.parameters.keys())[1:]  # first parameter is x
-#     provided = list(init_params.keys())
-
-#     unknown = [p for p in provided if p not in allowed]
-#     missing = [p for p in allowed if p not in provided]
-
-#     if unknown:
-#         print(f"[WARNING] Function {func.__name__}: unknown init_params {unknown} "
-#               f"(not in function signature: {allowed})")
-
-#     if missing:
-#         print(f"[INFO] Function {func.__name__}: missing parameters {missing} — "
-#               "using function defaults or may be required at evaluation.")
-
-
-# # -----------------------------------------------------------
-# # 4. Build the full items dictionary for LmfitGlobal
-# # -----------------------------------------------------------
-# def make_items(data_dict, function_dict):
-#     """
-#     Combine data and function dictionaries into one unified `items` dict.
-
-#     Args:
-#         data_dict (dict): from make_data_dict
-#         function_dict (dict): from make_function_dict
-
-#     Returns:
-#         dict: items suitable for passing to LmfitGlobal
-#     """
-#     if not isinstance(data_dict, dict):
-#         raise TypeError("data_dict must be a dict from make_data_dict")
-
-#     if not isinstance(function_dict, dict):
-#         raise TypeError("function_dict must be a dict from make_function_dict")
-
-#     return {
-#         "data": data_dict,
-#         "functions": function_dict,
-#     }
-
 
 # %%
 # -----------------------------------------------------------
@@ -369,37 +216,115 @@ def make_items_from_dict(x, y_dict, func_list, connectors=None, xrange=None):
 # %%
 class GlobalFitBuilder:
     """
-    Fluent interface for building LmfitGlobal items.
+    Fluent interface for building `LmfitGlobal` input items.
+
+    This builder simplifies the creation of the `items` dictionary
+    required by `LmfitGlobal`, supporting:
+    - multi-dataset data
+    - multi-component models
+    - connector validation
+    - optional x-range filtering
     """
 
     def __init__(self):
-        self._x = None
-        self._y_list = None
-        self._func_list = []
-        self._connectors = []
-        self._xrange = None
+        self.reset()
 
-    # --------------------- DATA -------------------------
-    def set_data(self, x, y_list, xrange=None):
-        self._x = np.asarray(x)
-        self._y_list = [np.asarray(y) for y in y_list]
+    # --------------------- LIFECYCLE ---------------------
+    def reset(self):
+        """Reset builder state for reuse."""
+        self._x: np.ndarray | None = None
+        self._datasets: list[np.ndarray] | None = None
+        self._models: list[dict] = []
+        self._connectors: list[str] = []
+        self._xrange: tuple[float | None, float | None] | None = None
+        return self
+
+    # --------------------- DATA --------------------------
+    def set_data(self, x, y, *, xrange=None):
+        """
+        Set x and y data.
+
+        Args:
+            x (array_like): 1D array of x values, shape (N,)
+            y (array_like | list[array_like]):
+                - list of arrays [y0, y1, ...], each shape (N,)
+                - OR ndarray shape (N, ny)
+            xrange (tuple[float | None, float | None], optional):
+                Optional (xmin, xmax) range filter.
+        """
+        x = np.asarray(x)
+        if x.ndim != 1:
+            raise ValueError("x must be a 1D array")
+
+        # --- Case 1: y is list/tuple of 1D arrays ---
+        if isinstance(y, (list, tuple)):
+            datasets = [np.asarray(yi) for yi in y]
+            if any(yi.ndim != 1 for yi in datasets):
+                raise ValueError("Each y in y_list must be 1D")
+            if any(len(yi) != len(x) for yi in datasets):
+                raise ValueError("Each y must have same length as x")
+
+        # --- Case 2: y is ndarray ---
+        else:
+            y = np.asarray(y)
+            if y.ndim == 1:
+                datasets = [y]
+            elif y.ndim == 2:
+                if y.shape[0] != len(x):
+                    raise ValueError("y.shape[0] must match len(x)")
+                datasets = [y[:, i] for i in range(y.shape[1])]
+            else:
+                raise ValueError("y must be 1D, 2D, or list of 1D arrays")
+
+        self._x = x
+        self._datasets = datasets
         self._xrange = xrange
         return self
 
+    def add_dataset(self, y):
+        if self._datasets is None:
+            self._datasets = []
+        y = np.asarray(y)
+        if len(y) != len(self._x):
+            raise ValueError("Dataset length mismatch")
+        self._datasets.append(y)
+        return self
+
+
     # --------------------- MODELS ------------------------
-    def add_model(self, func, init_params, func_kws=None):
+    def add_model(self, func: Callable, init_params: dict, *, func_kws=None):
+        """
+        Add a model component.
+
+        Args:
+            func (callable): Model function f(x, ...)
+            init_params (dict): lmfit-style parameter hints
+            func_kws (dict, optional): Fixed keyword arguments
+        """
+        if not callable(func):
+            raise TypeError("func must be callable")
+
+        if not isinstance(init_params, dict):
+            raise TypeError("init_params must be a dict")
+
         func_kws = func_kws or {}
-        self._func_list.append({
-            "func_name": func,
-            "init_params": init_params,
-            "func_kws": func_kws
-        })
+        if not isinstance(func_kws, dict):
+            raise TypeError("func_kws must be a dict")
+
+        self._models.append(
+            {
+                "func_name": func,
+                "init_params": init_params,
+                "func_kws": func_kws,
+            }
+        )
         return self
 
     # ------------------ CONNECTORS -----------------------
-    def connect(self, *ops):
+    def connect(self, *ops: str):
         """
         Provide operators connecting added models.
+
         Example:
             .connect("+", "*")
         """
@@ -408,24 +333,45 @@ class GlobalFitBuilder:
 
     # ----------------------- BUILD -----------------------
     def build(self):
-        if self._x is None or self._y_list is None:
-            raise ValueError("Call set_data(x, y_list) before build().")
+        """
+        Build and return the `items` dictionary for LmfitGlobal.
+        """
+        if self._x is None or self._datasets is None:
+            raise ValueError("Call set_data(x, y) before build()")
 
-        items = make_items_from_xy(
+        if not self._models:
+            raise ValueError("At least one model must be added")
+
+        if self._connectors:
+            expected = len(self._models) - 1
+            if len(self._connectors) != expected:
+                raise ValueError(
+                    f"{len(self._models)} models require "
+                    f"{expected} connectors, got {len(self._connectors)}"
+                )
+
+        return make_items_from_xy(
             self._x,
-            self._y_list,
-            func_list=self._func_list,
+            self._datasets,
+            func_list=self._models,
             connectors=self._connectors,
-            xrange=self._xrange
+            xrange=self._xrange,
         )
-        return items
+
+    # ---------------------- DEBUG ------------------------
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}("
+            f"datasets={0 if self._datasets is None else len(self._datasets)}, "
+            f"models={len(self._models)}, "
+            f"xrange={self._xrange})"
+        )
 
 
 # %%
 
 
 # %%
-# import os
 # import numpy as np
 # from scipy.special import erf, erfc
 # log2 = np.log(2)
@@ -539,18 +485,90 @@ class GlobalFitBuilder:
 
 # items = make_items(data_dict, function_dict)
 
-# # lg = LmfitGlobal(items)
-# # result = lg.fit()
 
 # items
 
 
 # %%
+# import numpy as np
+# from scipy.special import erf, erfc
+# log2 = np.log(2)
+# s2pi = np.sqrt(2*np.pi)
+# s2 = np.sqrt(2.0)
+# # tiny had been numpy.finfo(numpy.float64).eps ~=2.2e16.
+# # here, we explicitly set it to 1.e-15 == numpy.finfo(numpy.float64).resolution
+# tiny = 1.0e-15
+
+# def not_zero(value):
+#     """Return value with a minimal absolute size of tiny, preserving the sign.
+
+#     This is a helper function to prevent ZeroDivisionError's.
+
+#     Parameters
+#     ----------
+#     value : scalar
+#         Value to be ensured not to be zero.
+
+#     Returns
+#     -------
+#     scalar
+#         Value ensured not to be zero.
+
+#     """
+#     return float(np.copysign(max(tiny, abs(value)), value))
+
+# def step(x, amplitude, center, sigma, form='linear'):
+# # def step(x, amplitude=1.0, center=0.0, sigma=1.0, form='linear'):
+#     """Return a step function.
+
+#     Starts at 0.0, ends at `sign(sigma)*amplitude`, has a half-max at
+#     `center`, rising or falling with `form`:
+
+#     - `'linear'` (default) = amplitude * min(1, max(0, arg + 0.5))
+#     - `'atan'`, `'arctan'` = amplitude * (0.5 + atan(arg)/pi)
+#     - `'erf'`              = amplitude * (1 + erf(arg))/2.0
+#     - `'logistic'`         = amplitude * [1 - 1/(1 + exp(arg))]
+
+#     where ``arg = (x - center)/sigma``.
+
+#     Note that ``sigma > 0`` gives a rising step, while ``sigma < 0`` gives
+#     a falling step.
+#     """
+#     out = np.sign(sigma)*(x - center)/max(tiny*tiny, abs(sigma))
+
+#     if form == 'erf':
+#         out = 0.5*(1 + erf(out))
+#     elif form == 'logistic':
+#         out = 1. - 1./(1. + np.exp(out))
+#     elif form in ('atan', 'arctan'):
+#         out = 0.5 + np.arctan(out)/np.pi
+#     elif form == 'linear':
+#         out = np.minimum(1, np.maximum(0, out + 0.5))
+#     else:
+#         msg = (f"Invalid value ('{form}') for argument 'form'; should be one "
+#                "of 'erf', 'logistic', 'atan', 'arctan', or 'linear'.")
+#         raise ValueError(msg)
+
+#     return amplitude*out
+
+
+# def linear(x, slope=1.0, intercept=0.0):
+#     """Return a linear function.
+
+#     linear(x, slope, intercept) = slope * x + intercept
+
+#     """
+#     return slope * x + intercept
+
 # x = np.linspace(0, 10, 200)
 # y0 = step(x, amplitude=100, center=3, sigma=1, form='erf') + linear(x, 1.0, 0.0)
 # y1 = step(x, amplitude=80, center=4, sigma=1.2, form='erf') + linear(x, 0.5, 1.0)
 
+# y_list = y0
+# # y_list = y0.tolist()  # must be array
+# y_list = [y0]
 # y_list = [y0, y1]
+# y_list = np.column_stack([y0, y1])  # shape (N, ny)
 
 # init_step = {
 #     'amplitude': {'value':100, 'vary':True},
