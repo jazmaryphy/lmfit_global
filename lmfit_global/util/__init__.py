@@ -1,3 +1,3 @@
-from . import parameters, plotting, reporting, utils, io
+from . import parameters, plotting, lineshapes, reporting, utils, io
 
-__all__ = ["parameters", "plotting", "reporting", "utils", "io"]
+__all__ = ["parameters", "plotting", "lineshapes", "reporting", "utils", "io"]
