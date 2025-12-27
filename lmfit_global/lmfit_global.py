@@ -28,6 +28,10 @@ from .util.plotting import (
 from .util.utils import(
     parse_xrange
 )
+from .util.io import(
+    grid_and_eval, 
+    build_ascii_columns
+)
 
 # %%
 # --- The package lmfit is a MUST
@@ -2035,7 +2039,44 @@ class LmfitGlobal:
             f"  nan_policy     : {self.nan_policy}"
         )
 
+
+    def export_ascii(
+        self,
+        numpoints: int | None = None,
+        x_fit: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """
+        Export data and model into ASCII format.
+        """
+        # --- raw data ---
+        x_data = self.x_data
+        y_data = self.y_data
+
+        # --- model grid + eval ---
+        x_model, y_model = grid_and_eval(
+            x_data=x_data,
+            eval_func=self.eval,
+            params=self.result.params,
+            numpoints=numpoints,
+            x_fit=x_fit,
+        )
+
+        return build_ascii_columns(
+            x_data=x_data,
+            y_data=y_data,
+            x_fit=x_model,
+            y_fit=y_model,
+        )
+    
     def export(self):
+        # np.savetxt(
+        #     filename,
+        #     cols,
+        #     delimiter=", ",
+        #     header=header,
+        #     comments="",
+        #     fmt="%.8g",
+        # )
         return self
 
 # %%
