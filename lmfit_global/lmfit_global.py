@@ -338,7 +338,7 @@ class LmfitGlobal:
         items: dict, 
         independent_vars: Optional[List[str]] = None,
         nan_policy: str = 'raise', 
-        method: str = 'leastsq', 
+        fit_method: str = 'leastsq', 
         logger: logging.Logger | None = None,
         **fit_kws
     ):
@@ -348,14 +348,14 @@ class LmfitGlobal:
             items (dict): _description_
             independent_vars (Optional[List[str]], optional): _description_. Defaults to None.
             nan_policy (str, optional): _description_. Defaults to 'raise'.
-            method (str, optional): _description_. Defaults to 'leastsq'.
+            fit_method (str, optional): _description_. Defaults to 'leastsq'.
         """
         # --- Make own copy to avoid overwriting of internal elements ---
         items = copy.deepcopy(items)
         self.items = items
-        self.method = method
         self.fit_kws = fit_kws
         self.nan_policy = nan_policy
+        self.fit_method = fit_method
         self.independent_vars = independent_vars
  
         self.logger = logger or get_default_logger(self.__class__.__name__)
@@ -1406,7 +1406,7 @@ class LmfitGlobal:
 
     def fit(
         self,
-        method: Optional[str] = None,
+        fit_method: Optional[str] = None,
         nan_policy: str = "",
         verbose: bool = False,
         iter_cb: Optional[callable] = None,
@@ -1417,7 +1417,7 @@ class LmfitGlobal:
         Fit the model to the data using ``lmfit.minimize()``.
 
         Args:
-            method (str): Name of the fitting method to use. Defaults to 'leastsq'.
+            fit_method (str): Name of the fitting method to use. Defaults to 'leastsq'.
                 See: https://lmfit.github.io/lmfit-py/fitting.html
             nan_policy ({'raise', 'propagate', 'omit'}, optional): NaNs policy
             verbose (bool): _description_  Default to False
@@ -1430,7 +1430,7 @@ class LmfitGlobal:
         """
         # --- Resolve arguments with fallbacks ---
         logger = logger or self.logger
-        method = method or self.method
+        fit_method = fit_method or self.fit_method
         fit_kws = fit_kws or self.fit_kws
         # iter_cb = iter_cb or self._iteration
         nan_policy = nan_policy or self.nan_policy
@@ -1440,7 +1440,7 @@ class LmfitGlobal:
         # if verbose:
         import time
         t0 = time.perf_counter()
-        msg = f"Fitting started (method='{method}') ..."
+        msg = f"Fitting started (fit_method='{fit_method}') ..."
         try:
             self.logger.info(msg)
         except NameError:
@@ -1450,7 +1450,7 @@ class LmfitGlobal:
         self.result = lmfit.minimize(
             self._residual,
             self.init_params,
-            method=method,
+            method=fit_method,
             nan_policy=nan_policy,
             iter_cb=iter_cb,
             **fit_kws,
@@ -2240,3 +2240,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
