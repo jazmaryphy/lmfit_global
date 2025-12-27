@@ -29,6 +29,7 @@ from .util.utils import(
     parse_xrange
 )
 from .util.io import(
+    export_ascii,
     grid_and_eval, 
     build_ascii_columns
 )
@@ -2018,29 +2019,11 @@ class LmfitGlobal:
         """Plot only the fitted model."""
         return self._plot_what("fit", plot_residual=plot_residual, **kws)
 
-    def __repr__(self):
-        return (
-            f"{self.__class__.__name__}("
-            f"ny={self.ny}, nc={self.nc}, N={self.N}, "
-            f"multicomponent={self.is_multicomponent}, "
-            f"multidataset={self.is_multidataset}"
-            f")"
-        )
 
-
-    def summary(self):
-        return (
-            f"{self.__class__.__name__}:\n"
-            f"  datasets       : {self.ny}\n"
-            f"  components     : {self.nc}\n"
-            f"  N points       : {self.N}\n"
-            f"  multicomponent : {self.is_multicomponent}\n"
-            f"  multidataset   : {self.is_multidataset}\n"
-            f"  nan_policy     : {self.nan_policy}"
-        )
-
-
-    def export_ascii(
+    # -------------------------------
+    # Export Data/Plot Helpers
+    # -------------------------------
+    def _export_data_as_ascii(
         self,
         numpoints: int | None = None,
         x_fit: np.ndarray | None = None,
@@ -2067,17 +2050,93 @@ class LmfitGlobal:
             x_fit=x_model,
             y_fit=y_model,
         )
+
+    def save(
+        self,
+        filename: str,
+        *,
+        format: str = "ascii",
+        **kwargs,
+    ):
+        """
+        Save fit results to file.
+
+        Args:
+            filename (str):  Output file path.
+            format (str, optional): Output format. Currently supported:
+                - "ascii"  (default)
+            **kwargs :
+                Additional keyword arguments passed to the
+                underlying export function.
+
+        Examples
+        --------
+        >>> lg.save("fit.dat")
+        >>> lg.save("fit.dat", numpoints=1024)
+        >>> lg.save("fit.dat", x_fit=x_dense)
+        """
+        from pathlib import Path
+        if not getattr(self, "fit_success", False):
+            self._log_err("Cannot save results: fit has not been performed", RuntimeError)
+            # raise RuntimeError("Cannot save results: fit has not been performed")
+
+        format = format.lower().strip()
+
+        _SAVE_DISPATCH = {
+            "ascii": export_ascii,
+            # --- future: ---
+            # "csv": export_csv,
+            # "npz": export_npz,
+        }
+
+        if format not in _SAVE_DISPATCH:
+            raise ValueError(
+                f"Unknown save format '{format}'. "
+                f"Available formats: {list(_SAVE_DISPATCH)}"
+            )
+
+        filename = Path(filename)
+
+        self.logger.info(
+            f"Saving fit results to '{filename}' (format='{format}') ..."
+        )
+
+        # Call backend exporter
+        _SAVE_DISPATCH[format](
+            self,
+            filename,
+            **kwargs,
+        )
+
+        self.logger.info("Save completed successfully...")
+
     
     def export(self):
-        # np.savetxt(
-        #     filename,
-        #     cols,
-        #     delimiter=", ",
-        #     header=header,
-        #     comments="",
-        #     fmt="%.8g",
-        # )
         return self
+    
+    # -------------------------------
+    # FINAL
+    # -------------------------------
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}("
+            f"ny={self.ny}, nc={self.nc}, N={self.N}, "
+            f"multicomponent={self.is_multicomponent}, "
+            f"multidataset={self.is_multidataset}"
+            f")"
+        )
+
+
+    def summary(self):
+        return (
+            f"{self.__class__.__name__}:\n"
+            f"  datasets       : {self.ny}\n"
+            f"  components     : {self.nc}\n"
+            f"  N points       : {self.N}\n"
+            f"  multicomponent : {self.is_multicomponent}\n"
+            f"  multidataset   : {self.is_multidataset}\n"
+            f"  nan_policy     : {self.nan_policy}"
+        )
 
 # %%
 def main():
@@ -2164,6 +2223,10 @@ def main():
     # lg.rsquared
     lg.report()
 
+    # save ascii data
+    filename = '../examples/data/main_single_gaussain.dat'
+    lg.save(filename, numpoints=1024)
+
     # --- fancy plots ---
     # pretty_kw={'width': 6, 'height':6, 'dpi':100} # width and height and dpi of figure
     # lg.plot_init(show=True, numpoints=1000, xlabel='x', ylabel='y', pretty_kw=pretty_kw)
@@ -2177,5 +2240,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

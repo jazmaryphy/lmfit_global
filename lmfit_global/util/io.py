@@ -1,5 +1,6 @@
 # %%
 import numpy as np
+from pathlib import Path
 
 # %%
 def build_ascii_columns(
@@ -98,6 +99,109 @@ def grid_and_eval(
     y_model = eval_func(x=x_model, params=params)
 
     return x_model, y_model
+
+def export_ascii(
+    lg,
+    filename: str,
+    *,
+    numpoints: int | None = None,
+    x_fit: np.ndarray | None = None,
+    header: bool = True,
+    fmt: str = "% .8e",
+):
+    """
+    Export data and fitted model to an ASCII column file.
+
+    The output columns are arranged as::
+
+        x_data | x_fit | y_data[0] | y_fit[0] | y_data[1] | y_fit[1] | ...
+
+    Shorter arrays are padded with NaNs to form a rectangular table
+    (compatible with musrfit-style ASCII files).
+
+    Args:
+        lg:
+            LmfitGlobal instance (already fitted).
+        filename (str):
+            Output file path.
+        numpoints (int | None, optional):
+            Number of points for a dense fit grid.
+            If None, uses data grid.
+        x_fit (np.ndarray | None, optional):
+            Explicit x-grid for model evaluation.
+            Overrides numpoints if provided.
+        header (bool, optional):
+            If True, write a descriptive header.
+        fmt (str, optional):
+            Numeric format passed to np.savetxt.
+    """
+    if not getattr(lg, "fit_success", False):
+        raise RuntimeError("Cannot export: fit has not been performed successfully")
+
+    # Obtain FitData (single authoritative source)
+    fitdata = lg.get_fitdata(numpoints=numpoints)
+
+    x_data = np.asarray(fitdata.x_data, float)
+    y_data = np.asarray(fitdata.y_data, float)
+
+    if fitdata.has_fit:
+        x_model = np.asarray(fitdata.x_model, float)
+        y_fit = np.asarray(fitdata.y_fit, float)
+    else:
+        raise RuntimeError("FitData has no fitted model")
+
+    # Optional override of x_fit
+    if x_fit is not None:
+        x_model = np.asarray(x_fit, float)
+        y_fit = lg.eval(x=x_model, params=lg.result.params)
+
+    if y_data.ndim != 2 or y_fit.ndim != 2:
+        raise ValueError("y_data and y_fit must be 2D arrays")
+
+    if y_data.shape[1] != y_fit.shape[1]:
+        raise ValueError("Mismatch in number of datasets between data and fit")
+
+    ny = y_data.shape[1]
+    nrows = max(len(x_data), len(x_model))
+
+    # Padding helper
+    def pad(arr, n):
+        out = np.full((n,) + arr.shape[1:], np.nan)
+        out[: len(arr)] = arr
+        return out
+
+    # Build column matrix
+    columns = [
+        pad(x_data[:, None], nrows),
+        pad(x_model[:, None], nrows),
+    ]
+
+    for j in range(ny):
+        columns.append(pad(y_data[:, j:j + 1], nrows))
+        columns.append(pad(y_fit[:, j:j + 1], nrows))
+
+    table = np.hstack(columns)
+
+    # Header
+    hdr = None
+    if header:
+        # names = ["xData", "xTheory"]
+        names = ["xData", "xFit"]
+        for j in range(ny):
+            # names += [f"data{j}", f"theory{j}"]
+            names += [f"Data{j}", f"yFit{j}"]
+        hdr = ", ".join(names)
+
+    # Write file
+    filename = Path(filename)
+    np.savetxt(
+        filename,
+        table,
+        delimiter=", ",
+        header=hdr if hdr else "",
+        # comments="",
+        fmt=fmt,
+    )
 
 
 def ascii_header(ny: int) -> str:
