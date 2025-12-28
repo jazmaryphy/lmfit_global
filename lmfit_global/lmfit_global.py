@@ -1530,6 +1530,10 @@ class LmfitGlobal:
         self.best_fit = self.eval(params=self.result.params)
         self.residual = self.ydat - self.y_sim
 
+        self.init_values = self.init_params.valuesdict()
+        self.best_values = self.result.params.valuesdict()
+        self.init_vals   = list(self.init_values.items())
+
         # --- R^2 statistics ---
         self.r2_dict = {
             "raw": r_squared_safe(self.ydat, self.y_sim, multioutput="raw_values"),
