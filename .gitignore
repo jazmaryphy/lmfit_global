@@ -1,6 +1,8 @@
-# Python cache
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
+__pycache__/*
+*.py[cod]
+*$py.class
 
 # notebook
 *.ipynb
@@ -11,31 +13,20 @@ __pycache__/
 # Virtual environments
 .venv/
 
-# Build artifacts (optional)
-lmfit-global/*
+# Project archives and legacy code
+archive/
+old/
+scratch/
 
-# Optional: ignore experimental folders
-tests_codes/
-old_examples/
+# Development files:
+# files prefixed with `NN-` or suffixed with `_vN` 
+# are considered experimental and are ignored by git.
 
-# experimental files
-lmfit_global/*-lmfit_global.py
-lmfit_global/*-lmfit_global.ipynb
-lmfit_global/lmfit_global_v*.py
+# Files starting with digits (00-, 01-, 02-, ...)
+lmfit_global/[0-9]*-*.py
+lmfit_global/util/[0-9]*-*.py
 
+# Versioned files (_v1, _v2, ...)
+lmfit_global/*_v*.py
+lmfit_global/util/*_v*.py
 
-# Ignore temporary or experimental files inside the package
-lmfit_global/lmfit_global/globutils.*
-lmfit_global/lmfit_global/lmfit_global_v*
-lmfit_global/lmfit_global/*-lmfit*
-lmfit_global/lmfit_global/__pycache__/
-lmfit_global/lmfit_global/*.Identifier
-lmfit_global/lmfit_global/lmfit_global_refactor.*
-lmfit_global/lmfit_global/lmfit_global_cleaner.*
-lmfit_global/util/01-utils.py
-lmfit_global/util/01-utils.ipynb
-
-# Ignore notebooks inside package (optional)
-lmfit_global/lmfit_global/*.ipynb
-lmfit_global/lmfit_global/util/*.ipynb
-lmfit_global/lmfit_global/util/__pycache__/
