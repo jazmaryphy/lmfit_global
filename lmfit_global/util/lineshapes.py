@@ -660,15 +660,37 @@ def muMinusExpTF(t, N0=1.0, tau=1.0, A=0.0, lam=1.0, phi=0.0, nu=0.0):
     return N0 * decay * (1 + envelope * np.cos(phase))
 
 
-def polynom(t, t0=0.0, *a):
+def polynom(t, t0=0.0, **coeffs):
     """Returns Polynomial model centered at t₀.
 
     Args:
         t (array-like): Time values.
         t0 (float): Center time for polynomial expansion.
-        *a (float): Coefficients a0, a1, ..., an.
+        **coeffs (float): Coefficients named as a0, a1, a2, ...
+            coefficients extracted in order: a0, a1, a2, ...
+
     """
     dt = t - t0
+    ordered = sorted(coeffs.items(), key=lambda kv: int(kv[0][1:]))
+    a = [v for _, v in ordered]
     return sum(a_k * dt**k for k, a_k in enumerate(a))
 
 
+# %%
+# import matplotlib.pyplot as plt
+# t = np.linspace(0, 6, 100)
+# gamma_mu = 0.0135538817  # MHz/G
+
+# const(t, const=1)
+# asymmetry(t, A=0.24)
+
+# params = {"a0": 1, "a1": 2, "a2": 3}
+# y = polynom(t, t0=0.5, **params)
+# y = polynom(t, t0=0.5, a0=1, a1=2, a2=3)
+
+# y = asymmetry(t, A=0.24) * statGssKT(t, sigma=1.1)
+# y = asymmetry(t, A=0.2357) * simplExpo(t, lam=0.02) * TFieldCos(t, phi=-5.94, nu=0.42032)
+
+# plt.figure()
+# plt.plot(t, y)
+# plt.show()
