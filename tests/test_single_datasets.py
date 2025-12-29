@@ -110,3 +110,7 @@ def testLinear():
 
 def testGaussian():
     check_fit(lineshapes.gaussian, dict(amplitude=8, center=4, sigma=1))
+
+
+def testSine():
+    check_fit(lineshapes.sine, dict(amplitude=1, frequency=5, shift=0))
