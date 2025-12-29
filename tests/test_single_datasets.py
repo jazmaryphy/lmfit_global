@@ -120,11 +120,3 @@ def testSine():
 
 def testExpsine():
     check_fit(lineshapes.expcosine, dict(amplitude=1, frequency=5, shift=0, decay=0.5))
-
-
-# def testStepmodel_erf():
-#     check_fit(lineshapes.step, dict(amplitude=1, center=3, sigma=1.5), func_kws={'form':'erf'})
-
-
-# def testStepmodel_linear():
-#     check_fit(lineshapes.step, dict(amplitude=1, center=3, sigma=1.5), func_kws={'form':'linear'})
