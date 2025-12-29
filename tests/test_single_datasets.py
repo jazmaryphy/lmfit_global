@@ -127,4 +127,4 @@ def testStepmodel_erf():
 
 
 def testStepmodel_linear():
-    check_fit(lineshapes.sine, dict(amplitude=1, center=3, sigma=1.5), func_kws={'form':'linear'})
+    check_fit(lineshapes.step, dict(amplitude=1, center=3, sigma=1.5), func_kws={'form':'linear'})
