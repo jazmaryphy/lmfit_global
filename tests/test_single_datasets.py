@@ -65,7 +65,7 @@ def build_items(func, params, xrange=None, func_kws=None):
     }
     return items
 
-def check_fit(func, test_params, noise_scale=1.e-3, atol=0.1, rtol=0.05):
+def check_fit(func, test_params, noise_scale=1.e-3, atol=0.1, rtol=0.05, func_kws=None):
     """Checks that a model fits noisy data well
 
     Args:
@@ -76,6 +76,8 @@ def check_fit(func, test_params, noise_scale=1.e-3, atol=0.1, rtol=0.05):
             parameters test data was generated with.
         rtol (float, optional): Relative tolerance for considering fit parameters close to the
             parameters test data was generated with.
+        func_kws (dict, optional): Additional keyword arguments to pass to model function. 
+            Defaults to None.
 
     Returns:
         fit result
@@ -87,8 +89,8 @@ def check_fit(func, test_params, noise_scale=1.e-3, atol=0.1, rtol=0.05):
     items = build_items(
         func=func, 
         params=test_params, 
-        xrange=None, 
-        func_kws=None
+        xrange=None,             # use default data range
+        func_kws=func_kws
     )
     xy = items['data']['xy']      # extract x, y
     x, y = xy[:, 0], xy[:, 1]
@@ -114,3 +116,15 @@ def testGaussian():
 
 def testSine():
     check_fit(lineshapes.sine, dict(amplitude=1, frequency=5, shift=0))
+
+
+def testExpsine():
+    check_fit(lineshapes.expcosine, dict(amplitude=1, frequency=5, shift=0, decay=0.5))
+
+
+def testStepmodel_erf():
+    check_fit(lineshapes.step, dict(amplitude=1, center=3, sigma=1.5), func_kws={'form':'erf'})
+
+
+def testStepmodel_linear():
+    check_fit(lineshapes.sine, dict(amplitude=1, center=3, sigma=1.5), func_kws={'form':'linear'})
