@@ -9,13 +9,13 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterable, List, Optional, Any
 
 # %%
-from util.parameters import (
+from .util.parameters import (
     normalize_parameter_specs, 
     _UNSET,
     _ALLOWED_NUMERIC,
     _LMFIT_INIT_PARAMETER_DEFAULTS
 )
-from util.reporting import (
+from .util.reporting import (
     wrap_expr,
     build_expr,
     pretty_expr,
@@ -24,16 +24,16 @@ from util.reporting import (
     pretty_print_params,
     get_default_logger
 )
-from util.plotting import (
+from .util.plotting import (
     # pretty_plot,
     # get_pretty_axarray,
     # plot_from_fitdata,
     FitPlotter
 )
-from util.utils import (
+from .util.utils import (
     parse_xrange
 )
-from util.io import(
+from .util.io import(
     export_ascii,
     grid_and_eval, 
     build_ascii_columns
