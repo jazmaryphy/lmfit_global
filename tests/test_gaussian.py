@@ -25,10 +25,8 @@ def get_data(func, **params):
 
     return x, y
 
-def build_items(func, xrange=None, init_params=None, func_kws=None):
-    # init_params = {} if init_params is None else init_params
-    # func_kws = {} if func_kws is None else func_kws
-    # params = {name: cfg.get("value", 0) for name, cfg in init_params.items()}
+def build_items(func, params, xrange=None, func_kws=None):
+    """build LmfitGlobal(items=items) items"""
     x, y = get_data(func, **params)
     init_params = parameters.normalize_parameter_specs(params)
     data_dict = {
@@ -54,27 +52,43 @@ def build_items(func, xrange=None, init_params=None, func_kws=None):
     }
     return items
 
-def check_fit(x, y, noise_scale=1.e-3, atol=0.1, rtol=0.05):
+def check_fit(func, test_params, noise_scale=1.e-3, atol=0.1, rtol=0.05):
+    """Checks that a model fits noisy data well
 
-    y += np.random.normal(scale=noise_scale, size=len(y))
-    return 
+    Args:
+        func (callable):  model function to use
+        test_params: dict of 'true values'
+        noise_scale (float, optional): The standard deviation of noise that is added to the test data.
+        atol (float, optional): Absolute tolerance for considering fit parameters close to the
+            parameters test data was generated with.
+        rtol (float, optional): Relative tolerance for considering fit parameters close to the
+            parameters test data was generated with.
 
-params = {
-    "amplitude": 2.0,
-    "center": 0.5,
-    "sigma": 0.8
-}
-init_params = parameters.normalize_parameter_specs(params)
-# print(init_params)
+        Returns:
+        fit result
 
-init_params = {
-    'amplitude': {'value': 2.0, 'vary': True, 'min': -np.inf, 'max': +np.inf},
-    'center':    {'value': 0.5, 'min': 0, 'max': 10},
-    'sigma':     {'value': 0.8},
-}
+        Raises:
+        AssertionError: Any fit parameter that is not close to the parameter used to
+            generate the test data raises this error.
+    """
+    items = build_items(
+        func=func, 
+        params=test_params, 
+        xrange=None, 
+        func_kws=None
+    )
+    xy = items['data']['xy']      # extract x, y
+    x, y = xy[:, 0], xy[:, 1]
+    y += np.random.normal(scale=noise_scale, size=len(y))        # add noise
+    items['data']['xy'] = np.column_stack([x, y])
+    lg = LmfitGlobal(items)
+    lg.fit()
+    fit_values = lg.best_values
+    for name, test_val in test_params.items():
+        # print(name, test_val, fit_values[name+'_0'])
+        _isclose(name, test_val, fit_values[name+'_0'], atol, rtol)   # underscore is dataset index
+    return lg.result
 
 
-params = {name: cfg.get("value", 0) for name, cfg in init_params.items()}
-
-
-x, y = get_data(lineshapes.gaussian, **params)
+def testGaussian():
+    check_fit(lineshapes.gaussian, dict(amplitude=8, center=4, sigma=1))
