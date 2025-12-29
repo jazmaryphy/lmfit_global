@@ -103,5 +103,10 @@ def check_fit(func, test_params, noise_scale=1.e-3, atol=0.1, rtol=0.05):
     return lg.result
 
 
+
+def testLinear():
+    check_fit(lineshapes.linear, dict(intercept=2, slope=2))
+
+
 def testGaussian():
     check_fit(lineshapes.gaussian, dict(amplitude=8, center=4, sigma=1))

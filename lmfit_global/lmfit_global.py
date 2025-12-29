@@ -9,8 +9,13 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterable, List, Optional, Any
 
 # %%
-from .util.parameters import normalize_parameter_specs, _UNSET
-from .util.reporting import (
+from util.parameters import (
+    normalize_parameter_specs, 
+    _UNSET,
+    _ALLOWED_NUMERIC,
+    _LMFIT_INIT_PARAMETER_DEFAULTS
+)
+from util.reporting import (
     wrap_expr,
     build_expr,
     pretty_expr,
@@ -19,16 +24,16 @@ from .util.reporting import (
     pretty_print_params,
     get_default_logger
 )
-from .util.plotting import (
+from util.plotting import (
     # pretty_plot,
     # get_pretty_axarray,
     # plot_from_fitdata,
     FitPlotter
 )
-from .util.utils import(
+from util.utils import (
     parse_xrange
 )
-from .util.io import(
+from util.io import(
     export_ascii,
     grid_and_eval, 
     build_ascii_columns
@@ -211,22 +216,6 @@ _VALID_CONNECTORS = {
     '*': operator.mul,
     '/': operator.truediv,
 }
-
-
-# _ALLOWED_HINT_KEYS = {
-#     "value", "vary", 
-#     "min", "max", 
-#     "expr", "brute_step"
-#     }
-
-_LMFIT_INIT_PARAMETER_DEFAULTS = {
-            'value': -np.inf, 'vary': True,
-            'min': -np.inf, 'max': +np.inf,
-            'expr': None, 'brute_step': None
-        }
-
-_ALLOWED_NUMERIC = (int, float)
-
 
 
 class LmfitGlobal:
@@ -2244,5 +2233,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

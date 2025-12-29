@@ -1,4 +1,5 @@
 # %%
+import numpy as np
 from typing import Union, Iterable, Dict, Any
 
 # %%
@@ -9,6 +10,20 @@ except Exception as exc:  # pragma: no cover - runtime dependency
     raise ImportError("lmfit is required. Install with `pip install lmfit`") from exc
 
 _UNSET = object()
+
+# _ALLOWED_HINT_KEYS = {
+#     "value", "vary", 
+#     "min", "max", 
+#     "expr", "brute_step"
+#     }
+
+_LMFIT_INIT_PARAMETER_DEFAULTS = {
+            'value': -np.inf, 'vary': True,
+            'min': -np.inf, 'max': +np.inf,
+            'expr': None, 'brute_step': None
+        }
+
+_ALLOWED_NUMERIC = (int, float)
 
 # %%
 # def normalize_parameter_specs(
@@ -383,8 +398,3 @@ def normalize_parameter_specs(
         _add_param(item)
 
     return out
-
-# %%
-
-
-
