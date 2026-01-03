@@ -4,101 +4,6 @@ import numpy as np
 from typing import Iterable, Callable, Sequence
 
 # %%
-def normalize_xrange(xrange_):
-    """
-    Normalize xrange input into (xmin, xmax).
-
-    Supported formats:
-      - None
-      - (xmin, xmax)
-      - [xmin, xmax]
-      - {"min": xmin, "max": xmax}
-      - {"xmin": xmin, "xmax": xmax}
-    """
-    if xrange_ is None:
-        return None, None
-
-    if isinstance(xrange_, dict):
-        xmin = xrange_.get("min", xrange_.get("xmin"))
-        xmax = xrange_.get("max", xrange_.get("xmax"))
-        return xmin, xmax
-
-    if isinstance(xrange_, (tuple, list)) and len(xrange_) == 2:
-        return xrange_[0], xrange_[1]
-
-    raise ValueError(
-        "`xrange` must be None, (xmin, xmax), or dict "
-        "{min/xmin, max/xmax}"
-    )
-
-
-def validate_xrange(xmin, xmax):
-    """
-    Validate xmin/xmax values.
-
-    Returns:
-        (xmin, xmax) : tuple[float | None, float | None]
-    """
-    for name, val in (("xmin", xmin), ("xmax", xmax)):
-        if val is not None:
-            try:
-                val = float(val)
-            except Exception:
-                raise ValueError(f"`{name}` must be float or None")
-
-        if name == "xmin":
-            xmin = val
-        else:
-            xmax = val
-
-    if xmin is not None and xmax is not None and xmin >= xmax:
-        raise ValueError("`xmin` must be < `xmax`")
-
-    return xmin, xmax
-
-
-def parse_xrange(xrange_, *, xdata=None, clip=True, logger=None):
-    """
-    Parse, validate, and optionally clip xrange.
-
-    Args:
-        xrange_ (None | tuple | list | dict):
-        xdata (ndarray, optional):
-            Used for clipping if clip=True
-        clip (bool): 
-            Clip xrange to data limits
-        logger (logging.Logger, optional)
-
-    Returns:
-        (xmin, xmax)
-    """
-    xmin, xmax = normalize_xrange(xrange_)
-    xmin, xmax = validate_xrange(xmin, xmax)
-
-    if xdata is None:
-        return xmin, xmax
-
-    dmin, dmax = np.min(xdata), np.max(xdata)
-
-    if xmin is None:
-        xmin = dmin
-    if xmax is None:
-        xmax = dmax
-
-    if clip:
-        if xmin < dmin:
-            if logger:
-                logger.warning(f"xmin={xmin} < data min {dmin}, clipping")
-            xmin = dmin
-
-        if xmax > dmax:
-            if logger:
-                logger.warning(f"xmax={xmax} > data max {dmax}, clipping")
-            xmax = dmax
-
-    return xmin, xmax
-
-# %%
 def build_items(
     xy,
     functions,
@@ -437,3 +342,5 @@ class GlobalFitBuilder:
             f"models={len(self._models)}, "
             f"xrange={self._xrange})"
         )
+
+

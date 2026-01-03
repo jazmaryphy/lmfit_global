@@ -7,8 +7,8 @@ import pytest
 import operator
 import numpy as np
 from lmfit_global import LmfitGlobal
-from lmfit_global.util import parameters, lineshapes
-from lmfit_global.util.utils import GlobalFitBuilder
+from lmfit_global.utils import parameters, lineshapes
+from lmfit_global.utils.builders import GlobalFitBuilder
 
 
 VALID_CONNECTORS = {

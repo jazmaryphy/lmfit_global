@@ -24,9 +24,9 @@ scratch/
 
 # Files starting with digits (00-, 01-, 02-, ...)
 lmfit_global/[0-9]*-*.py
-lmfit_global/util/[0-9]*-*.py
+lmfit_global/utils/[0-9]*-*.py
 
 # Versioned files (_v1, _v2, ...)
 lmfit_global/*_v*.py
-lmfit_global/util/*_v*.py
+lmfit_global/utils/*_v*.py
 

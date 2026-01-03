@@ -3,6 +3,101 @@ import numpy as np
 from pathlib import Path
 
 # %%
+def normalize_xrange(x_range):
+    """
+    Normalize xrange input into (xmin, xmax).
+
+    Supported formats:
+      - None
+      - (xmin, xmax)
+      - [xmin, xmax]
+      - {"min": xmin, "max": xmax}
+      - {"xmin": xmin, "xmax": xmax}
+    """
+    if x_range is None:
+        return None, None
+
+    if isinstance(x_range, dict):
+        xmin = x_range.get("min", x_range.get("xmin"))
+        xmax = x_range.get("max", x_range.get("xmax"))
+        return xmin, xmax
+
+    if isinstance(x_range, (tuple, list)) and len(x_range) == 2:
+        return x_range[0], x_range[1]
+
+    raise ValueError(
+        "`xrange` must be None, (xmin, xmax), or dict "
+        "{min/xmin, max/xmax}"
+    )
+
+
+def validate_xrange(xmin, xmax):
+    """
+    Validate xmin/xmax values.
+
+    Returns:
+        (xmin, xmax) : tuple[float | None, float | None]
+    """
+    for name, val in (("xmin", xmin), ("xmax", xmax)):
+        if val is not None:
+            try:
+                val = float(val)
+            except Exception:
+                raise ValueError(f"`{name}` must be float or None")
+
+        if name == "xmin":
+            xmin = val
+        else:
+            xmax = val
+
+    if xmin is not None and xmax is not None and xmin >= xmax:
+        raise ValueError("`xmin` must be < `xmax`")
+
+    return xmin, xmax
+
+
+def parse_xrange(x_range, *, xdata=None, clip=True, logger=None):
+    """
+    Parse, validate, and optionally clip xrange.
+
+    Args:
+        x_range (None | tuple | list | dict):
+        xdata (ndarray, optional):
+            Used for clipping if clip=True
+        clip (bool): 
+            Clip xrange to data limits
+        logger (logging.Logger, optional)
+
+    Returns:
+        (xmin, xmax)
+    """
+    xmin, xmax = normalize_xrange(x_range)
+    xmin, xmax = validate_xrange(xmin, xmax)
+
+    if xdata is None:
+        return xmin, xmax
+
+    dmin, dmax = np.min(xdata), np.max(xdata)
+
+    if xmin is None:
+        xmin = dmin
+    if xmax is None:
+        xmax = dmax
+
+    if clip:
+        if xmin < dmin:
+            if logger:
+                logger.warning(f"xmin={xmin} < data min {dmin}, clipping")
+            xmin = dmin
+
+        if xmax > dmax:
+            if logger:
+                logger.warning(f"xmax={xmax} > data max {dmax}, clipping")
+            xmax = dmax
+
+    return xmin, xmax
+
+# %%
 def build_ascii_columns(
     x_data: np.ndarray,
     y_data: np.ndarray,
@@ -209,3 +304,5 @@ def ascii_header(ny: int) -> str:
     for j in range(ny):
         cols += [f"data{j}", f"theory{j}"]
     return ", ".join(cols)
+
+

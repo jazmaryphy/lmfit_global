@@ -1,4 +1,4 @@
 from .lmfit_global import LmfitGlobal
-from . import util
+from . import utils
 
-__all__ = ["LmfitGlobal", "util"]
+__all__ = ["LmfitGlobal", "utils"]

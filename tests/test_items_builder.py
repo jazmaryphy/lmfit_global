@@ -6,8 +6,8 @@
 import pytest
 import numpy as np
 from lmfit_global import LmfitGlobal
-from lmfit_global.util import lineshapes, parameters
-from lmfit_global.util.utils import GlobalFitBuilder
+from lmfit_global.utils import lineshapes, parameters
+from lmfit_global.utils.builders import GlobalFitBuilder
 
 def _isclose(name, expected_value, fit_value, atol, rtol):
     """isclose with error message"""
