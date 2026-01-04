@@ -6,7 +6,7 @@
 **Please note**: the code is at experimental stages...
 
 ## Dependencies
-To run the LmFitClobal, [**lmfit**](https://lmfit.github.io/lmfit-py/installation.html) and [**numpy**](https://numpy.org/) library are required.
+To run the `LmFitClobal`, [**lmfit**](https://lmfit.github.io/lmfit-py/installation.html) and [**numpy**](https://numpy.org/) library are required.
 
 ## Code structure and utilities
 ```
