@@ -1,12 +1,30 @@
 # lmfit-global
-[lmfit-global](https://github.com/jazmaryphy/lmfit_global/tree/main) is a Global (or one-run-fit) curve fitting code built on top of [LMFIT](https://lmfit.github.io/lmfit-py/index.html) to fit multi-components or multi-datasets problems for Python.
 
-[LMFIT](https://lmfit.github.io/lmfit-py/index.html) stands for **L**evenberg–**M**arquardt **FIT**ting.
+[lmfit-global](https://github.com/jazmaryphy/lmfit_global/tree/main) is a **global (single-run) curve fitting** framework built on top of
+[LMFIT](https://lmfit.github.io/lmfit-py/index.html) for solving **multi-component** and/or **multi-dataset** fitting problems in Python.
 
-**Please note**: the code is at experimental stages...
+It is designed for cases where:
+- multiple datasets must be fitted **simultaneously**
+- parameters are **shared or constrained** across datasets
+- models are composed of **multiple functional components**
+
+[LMFIT](https://lmfit.github.io/lmfit-py/index.html) refers to the Python fitting library based on
+**L**evenberg–**M**arquardt **FIT**ting and related optimization algorithms.
+
+> **Please note**  
+> This project is currently in an **experimental stage**...  
+> APIs and internal behavior may change.
 
 ## Dependencies
-To run the `LmFitClobal`, [**lmfit**](https://lmfit.github.io/lmfit-py/installation.html) and [**numpy**](https://numpy.org/) library are required.
+
+### Required
+- [**lmfit**](https://lmfit.github.io/lmfit-py/installation.html)
+- [**numpy**](https://numpy.org/)
+
+### Optional
+- [**scikit-learn**](https://scikit-learn.org/) — statistics and analysis utilities
+- [**matplotlib**](https://matplotlib.org/) — plotting and visualization
+
 
 ## Code structure and utilities
 ```
@@ -24,14 +42,14 @@ lmfit_global/
 │   │   ├── parameters.py
 │   │   └── lineshapes.py
 │   │
-│   ├── lmfit_global.py             
+│   ├── lmfit_global.py       # Core LmfitGlobal implementation       
 │
-├── tests/                       
-├── examples/                   
+├── tests/                    # Test Suite           
+├── examples/                 # example folder             
 ```
 
 ## Installation
-install this repository as:
+Clone the repository and install in editable mode:
 
 ```
 git clone https://github.com/jazmaryphy/lmfit_global.git
