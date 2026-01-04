@@ -6,12 +6,11 @@
 **Please note**: the code is at experimental stages...
 
 ## Dependencies
-To run the LmFitClobal, lmfit and numpy library are required.
+To run the LmFitClobal, [**lmfit**](https://lmfit.github.io/lmfit-py/installation.html) and [**numpy**](https://numpy.org/) library are required.
 
 ## Code structure and utilities
 ```
 lmfit_global/
-├── __init__.py
 │
 ├── lmfit_global/                
 │   ├── __init__.py
@@ -20,10 +19,10 @@ lmfit_global/
 │   │   ├── __init__.py
 │   │   ├── builders.py
 │   │   ├── io_utils.py
-│   │   ├── parameters.py
-│   │   ├── lineshapes.py
 │   │   ├── plotting.py
-│   │   └── reporting.py
+│   │   ├── reporting.py
+│   │   ├── parameters.py
+│   │   └── lineshapes.py
 │   │
 │   ├── lmfit_global.py             
 │
