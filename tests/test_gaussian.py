@@ -5,7 +5,7 @@
 
 import pytest
 import numpy as np
-from lmfit_global import LmfitGlobal
+from lmfit_global import LmfitGlobal, simplefit
 from lmfit_global.utils import lineshapes, parameters
 
 def _isclose(name, expected_value, fit_value, atol, rtol):
@@ -92,6 +92,7 @@ def check_fit(func, test_params, noise_scale=1.e-3, atol=0.1, rtol=0.05):
     )
     xy = items['data']['xy']      # extract x, y
     x, y = xy[:, 0], xy[:, 1]
+    np.random.seed(2021)
     y += np.random.normal(scale=noise_scale, size=len(y))        # add noise
     items['data']['xy'] = np.column_stack([x, y])
     lg = LmfitGlobal(items)
@@ -103,5 +104,58 @@ def check_fit(func, test_params, noise_scale=1.e-3, atol=0.1, rtol=0.05):
     return lg.result
 
 
+def check_simplefit(func, test_params, noise_scale=1.e-3, atol=0.1, rtol=0.05):
+    """Checks that a model fits noisy data well
+
+    Args:
+        func (callable):  model function to use
+        test_params: dict of 'true values'
+        noise_scale (float, optional): The standard deviation of noise that is added to the test data.
+        atol (float, optional): Absolute tolerance for considering fit parameters close to the
+            parameters test data was generated with.
+        rtol (float, optional): Relative tolerance for considering fit parameters close to the
+            parameters test data was generated with.
+
+    Returns:
+        fit result
+
+    Raises:
+        AssertionError: Any fit parameter that is not close to the parameter used to
+            generate the test data raises this error.
+    """  
+    p0 =  list(test_params.values())
+    p0 =  test_params.copy()
+    x, y = get_data(func, **test_params)
+    np.random.seed(2021)
+    y += np.random.normal(scale=noise_scale, size=len(y))        # add noise
+
+    result = None
+    return_result = True
+    if return_result:
+        popt, perr, result = simplefit(
+            func, p0=p0, x=x, y=y, err=1.0, fit_method="leastsq", return_result=return_result
+            )
+    else:
+        popt, perr, result = simplefit(
+            func, p0=p0, x=x, y=y, err=1.0, fit_method="leastsq", return_result=False
+            )
+    if result:
+        fit_values = result.best_values
+        for name, test_val in test_params.items():
+            _isclose(name, test_val, fit_values[name], atol, rtol)
+
+    return popt, perr, result
+    
+
 def testGaussian():
     check_fit(lineshapes.gaussian, dict(amplitude=8, center=4, sigma=1))
+
+
+def testGaussian_simplefit():
+    check_simplefit(lineshapes.gaussian, dict(amplitude=8, center=4, sigma=1))
+
+
+def testExponentiial_simplefit():
+    def exponential(x, amplitude=1.0, decay=1.0, offset=0.0):
+        return amplitude * np.exp(-decay*x) + offset
+    check_simplefit(exponential, dict(amplitude=2.5, decay=1.3, offset=0.8))
