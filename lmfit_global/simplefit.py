@@ -10,6 +10,22 @@ except Exception as exc:  # pragma: no cover - runtime dependency
     raise ImportError("lmfit is required. Install with `pip install lmfit`") from exc
 
 # %%
+def get_init_params(params):
+    from .utils import parameters
+    pardict = parameters.normalize_parameter_specs(params)
+
+    init_params = {}
+    for name, spec in pardict.items():
+        final = {}
+        for key, default in parameters._LMFIT_INIT_PARAMETER_DEFAULTS.items():
+            val = spec.get(key, parameters._UNSET)
+            final[key] = default if val is parameters._UNSET else val
+        # print(final)
+        init_params[name] = final
+
+    return init_params
+
+# %%
 def simplefit(
     model,
     p0,
