@@ -42,7 +42,8 @@ lmfit_global/
 │   │   ├── parameters.py
 │   │   └── lineshapes.py
 │   │
-│   ├── lmfit_global.py       # Core LmfitGlobal implementation       
+│   ├── lmfit_global.py       # Core LmfitGlobal implementation     
+│   ├── simplefit.py          # Analogous to scipy.optimize implementation  
 │
 ├── tests/                    # Test Suite           
 ├── examples/                 # example folder             
