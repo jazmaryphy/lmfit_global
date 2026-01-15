@@ -22,10 +22,10 @@ It is designed for cases where:
 - [**numpy**](https://numpy.org/)
 
 ### Optional
-- [**scipy**](https://scipy.org/) — To evaluate uncertainty bands
-- [**scikit-learn**](https://scikit-learn.org/) — statistics and analysis utilities
-- [**matplotlib**](https://matplotlib.org/) — plotting and visualization
-- > In order to run the test suite, the [**pytest**](https://docs.pytest.org/en/stable/) packages are required
+- [**scipy**](https://scipy.org/) — used for evaluating uncertainty bands  
+- [**scikit-learn**](https://scikit-learn.org/) — provides additional statistical and analysis utilities  
+- [**matplotlib**](https://matplotlib.org/) — enables plotting and visualization  
+> To run the test suite, the [**pytest**](https://docs.pytest.org/en/stable/) package is required.
 
 ## Code structure and utilities
 ```
