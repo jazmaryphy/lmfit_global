@@ -25,7 +25,7 @@ It is designed for cases where:
 - [**scipy**](https://scipy.org/) — To evaluate uncertainty bands
 - [**scikit-learn**](https://scikit-learn.org/) — statistics and analysis utilities
 - [**matplotlib**](https://matplotlib.org/) — plotting and visualization
-- [In order to run the test suite, the [**pytest**](https://docs.pytest.org/en/stable/) packages are required]
+- > In order to run the test suite, the [**pytest**](https://docs.pytest.org/en/stable/) packages are required
 
 ## Code structure and utilities
 ```
