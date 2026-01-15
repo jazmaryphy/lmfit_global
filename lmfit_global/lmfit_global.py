@@ -1783,7 +1783,242 @@ class LmfitGlobal:
             self._cached_fitdata_fit_counter = self._fit_counter
 
         return self._cached_fitdata
+    
 
+    ### --- NEW: EXPERIMENTAL --- ###
+    def eval_uncertainty(
+        self,
+        x: Optional[np.ndarray] = None,
+        params: Optional[lmfit.Parameters] = None,
+        sigma: float = 1.0,
+        dscale: float = 0.01,
+        components: bool = False,
+    ):
+        """EXPERIMENTAL
+
+        Evaluate uncertainty bands for the global model.
+
+        This method computes confidence intervals for the fitted model by
+        propagating the parameter covariance matrix through the model using
+        finite-difference derivatives. It supports single- and multi-dataset
+        fits, as well as single- and multi-component models.
+
+        If ``components=True`` and the model is multicomponent, uncertainty
+        bands are also computed for each individual model component.
+
+        Args:
+            x (np.ndarray, optional):
+                x-values at which to evaluate the uncertainty. If not provided,
+                ``self.xdat`` is used.
+            params (lmfit.Parameters, optional):
+                Parameters to use for evaluation. Defaults to the best-fit
+                parameters stored in ``self.result.params``.
+            sigma (float, optional):
+                Confidence level expressed in number of sigma. Typical values
+                are 1, 2, or 3. If ``sigma < 1``, it is interpreted as a
+                probability. Default is 1.0.
+            dscale (float, optional):
+                Scale factor for finite-difference parameter steps, expressed
+                as a fraction of the parameter standard error. Default is 0.01.
+            components (bool, optional):
+                If True and the model is multicomponent, return uncertainty
+                bands for each component in addition to the total model
+                uncertainty. Default is False.
+
+        Returns:
+            np.ndarray or tuple:
+                If ``components=False``:
+                    - ``dely`` (np.ndarray): Total model uncertainty with shape
+                    ``(npts, ny)``.
+
+                If ``components=True``:
+                    - ``dely`` (np.ndarray): Total model uncertainty with shape
+                    ``(npts, ny)``.
+                    - ``dely_comps`` (dict): Dictionary of per-component
+                    uncertainties. Keys are component names, and values are
+                    arrays with shape ``(npts, ny)`` (or ``(npts, 1)`` for
+                    single-dataset fits).
+
+        Raises:
+            ValueError:
+                If the covariance matrix is not available.
+
+        Notes:
+            1. This method computes confidence bands for the model using linear
+            error propagation from the best-fit parameter uncertainties.
+            2. The implementation is based on the clear and well-documented example
+            from the Kapteyn Package tutorial:
+            https://www.astro.rug.nl/software/kapteyn/kmpfittutorial.html#confidence-and-prediction-intervals,
+            which references the original work of:
+            J. Wolberg, *Data Analysis Using the Method of Least Squares*,
+            Springer (2006).
+            3. The uncertainty is calculated via first-order (linear) propagation
+            of errors, Var(y) = J^T C J`,where ``J`` is the Jacobian matrix of partial derivatives 
+            of the model with respect to the varying parameters, and ``C`` is the parameter
+            covariance matrix obtained from the fit.
+            4. Numerical derivatives are estimated using central finite differences
+            by stepping each varying parameter by ``±stderr * dscale``, where
+            ``stderr`` is the standard error of the parameter.
+            5. The returned uncertainty corresponds to a *confidence interval* on
+            the model prediction, reflecting parameter uncertainty only. A
+            *prediction interval*, which additionally includes the reduced
+            chi-square contribution, is available via the
+            ``self.dely_predicted`` attribute.
+            6. This implementation mirrors the behavior of
+            ``lmfit.ModelResult.eval_uncertainty`` but is extended to support
+            global fitting, multiple datasets, and multicomponent models.
+            7. The ``sigma`` argument specifies the confidence level in units of
+            standard deviations. Values of 1, 2, and 3 correspond to confidence
+            levels of approximately 0.6827, 0.9545, and 0.9973, respectively.
+            If ``sigma < 1``, it is interpreted directly as a probability, such
+            that ``sigma=1`` and ``sigma=0.6827`` yield equivalent results within
+            numerical precision.
+        """
+        from scipy.stats import t
+        from scipy.special import erf
+
+        result = self.result
+        params = params or result.params
+        x = np.asarray(x if x is not None else self.xdat)
+
+        covar = result.covar
+        if covar is None:
+            raise ValueError("Covariance matrix not available.")
+
+        var_names = result.var_names
+        nvarys = len(var_names)
+
+        # ------------------------------------------------------------------
+        # Evaluate best-fit model
+        # ------------------------------------------------------------------
+        y0 = self.eval(x=x, params=params)          # shape (npts, ny)
+        npts, ny = y0.shape
+        y0_flat = y0.ravel()
+        ndata = y0_flat.size
+
+        if any(params[p].stderr is None for p in var_names):
+            dely = np.zeros_like(y0)
+            return (dely, {}) if components else dely
+
+        # ------------------------------------------------------------------
+        # Component baseline evaluation
+        # ------------------------------------------------------------------
+        if components and self.is_multicomponent:
+            comps0 = self.eval_components(x_data=x, params=params)
+
+            if self.is_multidataset:
+                comp_names = list(next(iter(comps0.values())).keys())
+                y0_comps = {
+                    cname: np.concatenate(
+                        [comps0[i][cname]["data"] for i in range(self.ny)]
+                    )
+                    for cname in comp_names
+                }
+            else:
+                comp_names = list(comps0.keys())
+                y0_comps = {
+                    cname: comps0[cname]["data"]
+                    for cname in comp_names
+                }
+        else:
+            comp_names = []
+            y0_comps = {}
+
+        # ------------------------------------------------------------------
+        # Finite-difference Jacobians
+        # ------------------------------------------------------------------
+        jac = np.zeros((nvarys, ndata))
+        jac_comps = {
+            cname: np.zeros((nvarys, y0_comps[cname].size))
+            for cname in comp_names
+        }
+
+        for ip, pname in enumerate(var_names):
+            p = params[pname]
+            dp = p.stderr * dscale
+            if dp == 0:
+                continue
+
+            p0 = p.value
+
+            params[pname].value = p0 + dp
+            y_plus = self.eval(x=x, params=params).ravel()
+            comps_plus = (
+                self.eval_components(x_data=x, params=params)
+                if comp_names else None
+            )
+
+            params[pname].value = p0 - dp
+            y_minus = self.eval(x=x, params=params).ravel()
+            comps_minus = (
+                self.eval_components(x_data=x, params=params)
+                if comp_names else None
+            )
+
+            params[pname].value = p0
+
+            jac[ip] = (y_plus - y_minus) / (2 * dp)
+
+            for cname in comp_names:
+                if self.is_multidataset:
+                    ycp = np.concatenate(
+                        [comps_plus[i][cname]["data"] for i in range(self.ny)]
+                    )
+                    ycm = np.concatenate(
+                        [comps_minus[i][cname]["data"] for i in range(self.ny)]
+                    )
+                else:
+                    ycp = comps_plus[cname]["data"]
+                    ycm = comps_minus[cname]["data"]
+
+                jac_comps[cname][ip] = (ycp - ycm) / (2 * dp)
+
+        # ------------------------------------------------------------------
+        # Variance propagation
+        # ------------------------------------------------------------------
+        var_y = np.zeros(ndata)
+        for i in range(nvarys):
+            for j in range(nvarys):
+                var_y += jac[i] * jac[j] * covar[i, j]
+
+        var_y_comps = {}
+        for cname in comp_names:
+            v = np.zeros(jac_comps[cname].shape[1])
+            for i in range(nvarys):
+                for j in range(nvarys):
+                    v += jac_comps[cname][i] * jac_comps[cname][j] * covar[i, j]
+            var_y_comps[cname] = v
+
+        # ------------------------------------------------------------------
+        # Confidence scaling
+        # ------------------------------------------------------------------
+        if sigma < 1.0:
+            prob = sigma
+        else:
+            prob = erf(sigma / np.sqrt(2))
+
+        scale = t.ppf((prob + 1) / 2.0, result.ndata - nvarys)
+
+        dely = scale * np.sqrt(var_y).reshape(npts, ny)
+        self.dely = dely
+        self.dely_predicted = scale * np.sqrt(var_y + result.redchi).reshape(
+            npts, ny
+        )
+
+        if not components:
+            return dely
+
+        dely_comps = {}
+        for cname, v in var_y_comps.items():
+            dely_c = scale * np.sqrt(v)
+            dely_comps[cname] = (
+                dely_c.reshape(npts, ny)
+                if self.is_multidataset
+                else dely_c.reshape(npts, 1)
+            )
+
+        self.dely_comps = dely_comps
+        return dely, dely_comps
 
 
 
@@ -2223,9 +2458,15 @@ def main():
     # lg.plot_init(show=True, numpoints=1000, xlabel='x', ylabel='y', pretty_kw=pretty_kw)
     # lg.plot(plot_residual=True, show=True, numpoints=None, xlabel='x', ylabel='y', pretty_kw=pretty_kw)
 
+
     plt.plot(xy[:, 0], xy[:, 1], 'o')
     plt.plot(xy[:, 0], lg.init_fit, '--', label='initial fit')
     plt.plot(xy[:, 0], lg.best_fit, '-', label='best fit')
+
+    dely = lg.eval_uncertainty(sigma=3)
+    for i in range(lg.ny):
+        plt.fill_between(xy[:, 0], lg.best_fit[:, i]-dely[:, i], lg.best_fit[:, i]+dely[:, i], color="#8A8A8A", label=r'uncertainty band')
+
     plt.legend()
     plt.show()
 
