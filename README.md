@@ -64,5 +64,4 @@ You can many template examples in examples folder by:
 
 ```
 cd examples/
-
 ```
