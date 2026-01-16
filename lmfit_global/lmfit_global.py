@@ -25,9 +25,6 @@ from .utils.reporting import (
     get_default_logger
 )
 from .utils.plotting import (
-    # pretty_plot,
-    # get_pretty_axarray,
-    # plot_from_fitdata,
     FitPlotter
 )
 from .utils.io_utils import(
@@ -1873,6 +1870,9 @@ class LmfitGlobal:
             If ``sigma < 1``, it is interpreted directly as a probability, such
             that ``sigma=1`` and ``sigma=0.6827`` yield equivalent results within
             numerical precision.
+            8. Sets the attribute of `dely_predicted` for the 'predicted interval', the sigma-scaled
+            quadrature sum of the uncertainty interval `dely` and reduced chi-square. This should
+            give an idea of the expected range in the data.
         """
         from scipy.stats import t
         from scipy.special import erf
@@ -1888,22 +1888,20 @@ class LmfitGlobal:
         var_names = result.var_names
         nvarys = len(var_names)
 
-        # ------------------------------------------------------------------
-        # Evaluate best-fit model
-        # ------------------------------------------------------------------
+        ### --- Evaluate best-fit model --- ###
         y0 = self.eval(x=x, params=params)          # shape (npts, ny)
         npts, ny = y0.shape
         y0_flat = y0.ravel()
         ndata = y0_flat.size
 
         if any(params[p].stderr is None for p in var_names):
-            dely = np.zeros_like(y0)
-            return (dely, {}) if components else dely
+            self.dely = np.zeros_like(y0)
+            self.dely_predicted = np.zeros_like(y0)
+            self.dely_comps = {}
+            return self.dely
 
-        # ------------------------------------------------------------------
-        # Component baseline evaluation
-        # ------------------------------------------------------------------
-        if components and self.is_multicomponent:
+        ### --- Component baseline evaluation --- ###
+        if self.is_multicomponent:
             comps0 = self.eval_components(x_data=x, params=params)
 
             if self.is_multidataset:
@@ -1924,9 +1922,7 @@ class LmfitGlobal:
             comp_names = []
             y0_comps = {}
 
-        # ------------------------------------------------------------------
-        # Finite-difference Jacobians
-        # ------------------------------------------------------------------
+        #### --- Finite-difference Jacobians --- ###
         jac = np.zeros((nvarys, ndata))
         jac_comps = {
             cname: np.zeros((nvarys, y0_comps[cname].size))
@@ -1943,17 +1939,26 @@ class LmfitGlobal:
 
             params[pname].value = p0 + dp
             y_plus = self.eval(x=x, params=params).ravel()
+            # comps_plus = (
+            #     self.eval_components(x_data=x, params=params)
+            #     if comp_names else None
+            # )
             comps_plus = (
                 self.eval_components(x_data=x, params=params)
-                if comp_names else None
+                if self.is_multicomponent else None
             )
 
             params[pname].value = p0 - dp
             y_minus = self.eval(x=x, params=params).ravel()
+            # comps_minus = (
+            #     self.eval_components(x_data=x, params=params)
+            #     if comp_names else None
+            # )
             comps_minus = (
                 self.eval_components(x_data=x, params=params)
-                if comp_names else None
+                if self.is_multicomponent else None
             )
+
 
             params[pname].value = p0
 
@@ -1973,25 +1978,21 @@ class LmfitGlobal:
 
                 jac_comps[cname][ip] = (ycp - ycm) / (2 * dp)
 
-        # ------------------------------------------------------------------
-        # Variance propagation
-        # ------------------------------------------------------------------
-        var_y = np.zeros(ndata)
+        ### --- Variance propagation (df2_total) --- ###
+        df2_total = np.zeros(ndata)
         for i in range(nvarys):
             for j in range(nvarys):
-                var_y += jac[i] * jac[j] * covar[i, j]
+                df2_total += jac[i] * jac[j] * covar[i, j]
 
-        var_y_comps = {}
+        df2_comps = {}
         for cname in comp_names:
             v = np.zeros(jac_comps[cname].shape[1])
             for i in range(nvarys):
                 for j in range(nvarys):
                     v += jac_comps[cname][i] * jac_comps[cname][j] * covar[i, j]
-            var_y_comps[cname] = v
+            df2_comps[cname] = v
 
-        # ------------------------------------------------------------------
-        # Confidence scaling
-        # ------------------------------------------------------------------
+        ### --- Confidence scaling --- ###
         if sigma < 1.0:
             prob = sigma
         else:
@@ -1999,26 +2000,23 @@ class LmfitGlobal:
 
         scale = t.ppf((prob + 1) / 2.0, result.ndata - nvarys)
 
-        dely = scale * np.sqrt(var_y).reshape(npts, ny)
-        self.dely = dely
-        self.dely_predicted = scale * np.sqrt(var_y + result.redchi).reshape(
-            npts, ny
-        )
+        ### --- Store results (lmfit-style) --- ###
+        self.dely = scale * np.sqrt(df2_total).reshape(npts, ny)
+        self.dely_predicted = scale * np.sqrt(
+            df2_total + result.redchi
+        ).reshape(npts, ny)
 
-        if not components:
-            return dely
 
-        dely_comps = {}
-        for cname, v in var_y_comps.items():
+        self.dely_comps = {}
+        for cname, v in df2_comps.items():
             dely_c = scale * np.sqrt(v)
-            dely_comps[cname] = (
+            self.dely_comps[cname] = (
                 dely_c.reshape(npts, ny)
                 if self.is_multidataset
                 else dely_c.reshape(npts, 1)
             )
 
-        self.dely_comps = dely_comps
-        return dely, dely_comps
+        return self.dely
 
 
 
