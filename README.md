@@ -28,6 +28,7 @@ It is designed for cases where:
 ### Required
 - [**lmfit**](https://lmfit.github.io/lmfit-py/installation.html)
 - [**numpy**](https://numpy.org/)
+- [**scipy**](https://scipy.org/)
 
 ### Optional
 - [**scipy**](https://scipy.org/) — used for evaluating uncertainty bands  

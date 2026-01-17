@@ -172,7 +172,7 @@ class LmfitGlobal:
         log_level: str = '',
         **fit_kws
     ):
-        """_summary_
+        """Create a global lmfit model.
 
         Args:
             items (dict): Dictionary defining datasets and model components.

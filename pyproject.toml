@@ -1,7 +1,7 @@
 [project]
 name = "lmfit-global"
-version = "0.1.0"
-description = "Global fitting utilities built on top of lmfit"
+version = "0.1"
+description = "Global fitting of multi-component, multi-dataset models built on top of lmfit"
 authors = [
     { name = "MUHAMMAD MAIKUDI ISAH" }
 ]
@@ -12,6 +12,7 @@ requires-python = ">=3.10"
 dependencies = [
     "numpy",
     "lmfit",
+    "scipy",
     "matplotlib",
 ]
 
