@@ -1,25 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "lmfit-global"
-version = "0.1"
+version = "0.1.0"
 description = "Global fitting of multi-component, multi-dataset models built on top of lmfit"
-authors = [
-    { name = "MUHAMMAD MAIKUDI ISAH" }
-]
 readme = "README.md"
 requires-python = ">=3.10"
 
-# Unpinned dependencies for flexibility
+authors = [
+    { name = "Muhammad Maikudi Isah" }
+]
+
 dependencies = [
     "numpy",
     "lmfit",
     "scipy",
-    "matplotlib",
 ]
 
 [project.optional-dependencies]
+uncertainty = ["scipy"]
+plot = ["matplotlib", "palettable"]
 ml = ["scikit-learn"]
-plot = ["palettable"]
-
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
