@@ -1,0 +1,24 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Build artifacts (future-proof)
+_site/
+build/
+dist/
+
+# MyST build outputs
+/_build/
+# MyST build outputs
+_build
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+
