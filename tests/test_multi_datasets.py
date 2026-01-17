@@ -97,7 +97,7 @@ def check_fit(
     y += np.random.normal(scale=noise_scale, size=y.shape)
     items["data"]["xy"] = np.column_stack([x, *y.T])
 
-    lg = LmfitGlobal(items)
+    lg = LmfitGlobal(items, log_level='info')
     lg.fit()
 
     fit_values = lg.best_values

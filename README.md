@@ -1,3 +1,9 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/jazmaryphy/lmfit_global/main/docs/source/images/logo2.png"
+       alt="lmfit-global"
+       width="600">
+</p>
+
 # lmfit-global
 
 [lmfit-global](https://github.com/jazmaryphy/lmfit_global/tree/main) is a **global (single-run) curve fitting** framework built on top of
@@ -13,7 +19,7 @@ It is designed for cases where:
 
 > **Please note**  
 > This project is currently in an **experimental stage**...  
-> APIs and internal behavior may change.
+> Internal behavior may change.
 
 ## Dependencies
 
@@ -31,14 +37,57 @@ It is designed for cases where:
 ```
 lmfit_global/
 │
+├── lmfit_global/
+│   ├── __init__.py
+│   │
+│   ├── lmfit_global.py     # Core global fitting engine
+│   ├── simplefit.py        # Lightweight SciPy-like fitting interface
+│   │
+│   ├── utils/              # Internal utilities (I/O, plotting, builders, etc)
+│   │   └── ...
+│
+├── tests/                  # Test suite
+├── examples/               # Usage examples and tutorials
+```
+
+<!--
+```
+lmfit_global/
+│
 ├── lmfit_global/                
 │   ├── __init__.py
 │   │
 │   ├── utils/                   
 │   │   ├── __init__.py
+│   │   ├── fitdata.py
+│   │   ├── builders.py
+│   │   ├── .
+│   │   ├── .
+│   │   ├── .
+│   │   └── lineshapes.py
+│   │
+│   ├── lmfit_global.py       # Core LmfitGlobal implementation     
+│   ├── simplefit.py          # Analogous to scipy.optimize implementation  
+│
+├── tests/                    # Test Suite           
+├── examples/                 # example folder    
+```
+-->
+
+<!--
+```
+lmfit_global/
+│
+├── lmfit_global/                
+│   ├── __init__.py
+│   │
+│   ├── utils/                   
+│   │   ├── __init__.py
+│   │   ├── fitdata.py
 │   │   ├── builders.py
 │   │   ├── io_utils.py
 │   │   ├── plotting.py
+│   │   ├── modelspec.py
 │   │   ├── reporting.py
 │   │   ├── parameters.py
 │   │   └── lineshapes.py
@@ -49,6 +98,7 @@ lmfit_global/
 ├── tests/                    # Test Suite           
 ├── examples/                 # example folder             
 ```
+-->
 
 ## Installation
 Clone the repository and install in editable mode:

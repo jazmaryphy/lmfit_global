@@ -298,32 +298,6 @@ def _isclose(name, expected_value, fit_value, atol=0.1, rtol=0.05):
     """isclose with error message"""
     assert np.isclose(expected_value, fit_value, atol=atol, rtol=rtol), \
         f"bad value for {name}: expected {expected_value}, got {fit_value}"
-    
-
-# x = np.linspace(0, 10, 201)
-                                                
-# test_gaussian = dict(amplitude=8.5, center=6.66, sigma=0.68)
-
-# y = lineshapes.gaussian(x, **test_gaussian)
-# y += np.random.normal(scale=0.1, size=x.size)
-
-# xy = np.column_stack([x, y])
-
-# items = build_items(
-#     xy=xy,
-#     functions=[
-#         {
-#             "func_name": lineshapes.gaussian,
-#             "init_params": {
-#                 "amplitude": {"value": 5},
-#                 "center": {"value": 5},
-#                 "sigma": {"value": 1},
-#             },
-#         }
-#     ],
-# )
-
-# items
 
 
 
@@ -356,7 +330,7 @@ def testSingleGaussianLinear():
     )
 
 
-    lg = LmfitGlobal(items)
+    lg = LmfitGlobal(items, log_level='info')
     lg.fit(verbose=True)
     # lg.plot()
 
@@ -405,7 +379,7 @@ def testSingleGaussianLorentzian():
         connectors=["+"],
     )
 
-    lg = LmfitGlobal(items)
+    lg = LmfitGlobal(items, log_level='info')
     lg.fit(verbose=True)
     # lg.plot()
 
@@ -464,7 +438,7 @@ def testmuSRWTF():
         connectors=["*", "*"],
     )
 
-    lg = LmfitGlobal(items)
+    lg = LmfitGlobal(items, log_level='info')
     lg.fit(verbose=True)
     # lg.plot()
 
@@ -535,7 +509,7 @@ def testMultiGaussianLinear():
         connect="+",
     )
 
-    lg = LmfitGlobal(builder.build())
+    lg = LmfitGlobal(builder.build(), log_level='info')
     lg.fit(verbose=True)
     # lg.plot()
 
@@ -640,7 +614,7 @@ def _run_step_test(step_form=None):
         connect="+",
     )
 
-    lg = LmfitGlobal(builder.build())
+    lg = LmfitGlobal(builder.build(), log_level='info')
     lg.fit(verbose=True)
     # lg.plot()
 

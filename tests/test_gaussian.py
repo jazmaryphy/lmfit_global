@@ -95,7 +95,7 @@ def check_fit(func, test_params, noise_scale=1.e-3, atol=0.1, rtol=0.05):
     np.random.seed(2021)
     y += np.random.normal(scale=noise_scale, size=len(y))        # add noise
     items['data']['xy'] = np.column_stack([x, y])
-    lg = LmfitGlobal(items)
+    lg = LmfitGlobal(items, log_level='info')
     lg.fit()
     fit_values = lg.best_values
     for name, test_val in test_params.items():
