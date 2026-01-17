@@ -1,4 +1,4 @@
-name: Lmfit Global CI
+name: CI
 
 on:
   push:
@@ -8,12 +8,19 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v4
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
 
-      - uses: actions/setup-python@v5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python-version }}
+          cache: pip
 
       - name: Install dependencies
         run: |
@@ -29,4 +36,3 @@ jobs:
 
       - name: Run tests
         run: pytest -v
-
