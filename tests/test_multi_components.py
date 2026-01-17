@@ -646,25 +646,23 @@ def _run_step_test(step_form=None):
     return lg
 
 
+
 def testStepmodel_erf():
     """
     Step model using default ERF form.
     """
-    lg = _run_step_test(step_form=None)
-    return lg
+    _run_step_test(step_form=None)
 
 
 def testStepmodel_linear():
     """
     Step model using explicit LINEAR form.
     """
-    lg = _run_step_test(step_form="linear")
-    return lg
+    _run_step_test(step_form="linear")
 
 
 def testStepmodel_logistic():
     """
     Step model using explicit LINEAR form.
     """
-    lg = _run_step_test(step_form="logistic")
-    return lg
+    _run_step_test(step_form="logistic")
