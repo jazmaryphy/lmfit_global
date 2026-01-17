@@ -643,7 +643,7 @@ def _run_step_test(step_form=None):
         assert 1.8 < slope < 2.6
         assert 5 < intercept < 25
 
-    return lg
+    # return lg
 
 
 
