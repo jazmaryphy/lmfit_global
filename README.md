@@ -1,8 +1,10 @@
 <p align="center">
   <img src="https://raw.githubusercontent.com/jazmaryphy/lmfit_global/main/docs/source/images/logo2.png"
        alt="lmfit-global"
-       width="600">
+       width="400px"
+       height="300px">
 </p>
+
 
 # lmfit-global
 
