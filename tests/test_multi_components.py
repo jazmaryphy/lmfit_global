@@ -345,8 +345,6 @@ def testSingleGaussianLinear():
     _isclose("linear slope", test_linear["slope"], fit_params["c1_slope_0"].value)
     _isclose("linear intercept", test_linear["intercept"], fit_params["c1_intercept_0"].value)
 
-    return lg
-
 
 
 def testSingleGaussianLorentzian():
@@ -394,8 +392,6 @@ def testSingleGaussianLorentzian():
     _isclose("lorentzian amplitude", test_lorentzian["amplitude"], fit_params["c1_amplitude_0"].value)
     _isclose("lorentzian center", test_lorentzian["center"], fit_params["c1_center_0"].value)
     _isclose("lorentzian sigma", test_lorentzian["sigma"], fit_params["c1_sigma_0"].value)    
-
-    return lg
 
 
 
@@ -452,7 +448,6 @@ def testmuSRWTF():
     _isclose("precession phase", test_cos["phi"], fit_params["c2_phi_0"].value, atol=0.2)
     _isclose("precession frequency (MHz)", test_cos["nu"], fit_params["c2_nu_0"].value)
 
-    return lg
 
 
 def testMultiGaussianLinear():
@@ -533,8 +528,6 @@ def testMultiGaussianLinear():
         assert 0.2 <= sig.value <= 1.5
         assert 0.18 < slope.value < 0.28
         assert -1.1 < intercept.value < -0.8
-
-    return lg
 
 
 
