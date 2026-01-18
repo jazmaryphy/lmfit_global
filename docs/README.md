@@ -1,9 +1,10 @@
 <!--
 <p align="center">
   <img src="https://raw.githubusercontent.com/jazmaryphy/lmfit_global/main/docs/source/images/logo2.png"
-       alt="lmfit-global"
-       width="400px"
-       height="300px">
+       alt="lmfit-global logo"
+       width="300px" 
+       height="300px"
+  >
 </p>
 -->
 
@@ -38,7 +39,7 @@ It is designed for cases where:
 > To run the test suite, the [**pytest**](https://docs.pytest.org/en/stable/) package is required.
 
 ## Code structure and utilities
-```
+```bash
 lmfit_global/
 │
 ├── lmfit_global/
@@ -107,15 +108,19 @@ lmfit_global/
 ## Installation
 Clone the repository and install in editable mode:
 
-```
+```bash
 git clone https://github.com/jazmaryphy/lmfit_global.git
 cd lmfit_global/
 pip install -e .
 ```
 ## Example
 
-You can many template examples in examples folder by:
+Many template examples in examples folder by:
 
-```
+```bash
 cd examples/
 ```
+
+## License
+
+MIT — Created by [Muhammad Maikudi ISAH](https://x.com/heyitsmisah)
