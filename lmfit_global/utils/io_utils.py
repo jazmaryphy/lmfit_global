@@ -1,6 +1,9 @@
 # %%
+from __future__ import annotations
+
 import numpy as np
 from pathlib import Path
+from typing import Sequence, Optional, Literal
 
 # %%
 def normalize_xrange(x_range):
@@ -305,4 +308,180 @@ def ascii_header(ny: int) -> str:
         cols += [f"data{j}", f"theory{j}"]
     return ", ".join(cols)
 
+# %%
+def _merge_xyerr_pandas(xdat_lst, ydat_lst, yerr_lst, pd):
+    dfs = []
 
+    for i, (x, y) in enumerate(zip(xdat_lst, ydat_lst)):
+        data = {"x": x, f"y{i}": y}
+        if yerr_lst is not None:
+            data[f"yerr{i}"] = yerr_lst[i]
+        dfs.append(pd.DataFrame(data))
+
+    df = dfs[0]
+    for other in dfs[1:]:
+        df = df.merge(other, on="x", how="outer")
+
+    return df.sort_values("x", ignore_index=True)
+
+def _merge_xyerr_pandas_to_numpy(xdat_lst, ydat_lst, yerr_lst, pd):
+    dfs = []
+
+    for i, (x, y) in enumerate(zip(xdat_lst, ydat_lst)):
+        data = {"x": x, f"y{i}": y}
+        if yerr_lst is not None:
+            data[f"yerr{i}"] = yerr_lst[i]
+        dfs.append(pd.DataFrame(data))
+
+    df = dfs[0]
+    for other in dfs[1:]:
+        df = df.merge(other, on="x", how="outer")
+
+    df = df.sort_values("x", ignore_index=True)
+
+    x = df["x"].to_numpy()
+    y = np.column_stack([df[f"y{i}"].to_numpy() for i in range(len(xdat_lst))])
+
+    if yerr_lst is not None:
+        yerr = np.column_stack(
+            [df[f"yerr{i}"].to_numpy() for i in range(len(xdat_lst))]
+        )
+        return x, y, yerr
+
+    return x, y
+
+
+def _pandas_to_numpy(df):
+    x = df["x"].to_numpy()
+    y = np.column_stack([df[f"y{i}"].to_numpy() for i in range(len(xdat_lst))])
+
+    if yerr_lst is not None:
+        yerr = np.column_stack(
+            [df[f"yerr{i}"].to_numpy() for i in range(len(xdat_lst))]
+        )
+        return x, y, yerr
+
+    return x, y
+
+
+def _merge_xyerr_numpy(xdat_lst, ydat_lst, yerr_lst):
+    all_x = np.unique(np.concatenate(xdat_lst))
+    n = len(xdat_lst)
+
+    index = {x: i for i, x in enumerate(all_x)}
+
+    y = np.full((len(all_x), n), np.nan)
+    yerr = None if yerr_lst is None else np.full_like(y, np.nan)
+
+    for j, xj in enumerate(xdat_lst):
+        idx = [index[x] for x in xj]
+        y[idx, j] = ydat_lst[j]
+
+        if yerr_lst is not None:
+            yerr[idx, j] = yerr_lst[j]
+
+    return (all_x, y, yerr) if yerr_lst is not None else (all_x, y)
+
+
+def merge_xyerr_data(
+    xdat_lst: Sequence[np.ndarray],
+    ydat_lst: Sequence[np.ndarray],
+    yerr_lst: Optional[Sequence[np.ndarray]] = None,
+    *,
+    backend: Literal["auto", "numpy", "pandas"] = "auto",
+):
+    """Merge multiple (x, y[, yerr]) datasets onto a shared x-grid.
+
+    All datasets are aligned onto a common x-axis formed from the union
+    of all x-values. Missing values are filled with ``np.nan``.
+
+    Internally, pandas may be used for efficient alignment if available,
+    but outputs are always returned as NumPy arrays.
+
+    Args:
+        xdat_lst (Sequence[np.ndarray]):
+            Sequence of x arrays, one per dataset.
+        ydat_lst (Sequence[np.ndarray]):
+            Sequence of y arrays corresponding to ``xdat_lst``.
+        yerr_lst (Optional[Sequence[np.ndarray]]):
+            Optional sequence of y-error arrays. If provided, must match
+            the number and shape of ``xdat_lst`` and ``ydat_lst``.
+        backend (Literal["auto", "pandas", "numpy"], optional):
+            Backend used for merging:
+            - ``"auto"``: Use pandas if available, otherwise NumPy.
+            - ``"pandas"``: Force pandas (raises ImportError if unavailable).
+            - ``"numpy"``: Force pure NumPy implementation.
+
+    Returns:
+        tuple:
+            If ``yerr_lst`` is None:
+                ``(x, y)``
+            Otherwise:
+                ``(x, y, yerr)``
+
+            Where:
+            - ``x`` has shape ``(N,)``
+            - ``y`` has shape ``(N, n_datasets)``
+            - ``yerr`` has shape ``(N, n_datasets)``
+
+            Here, ``N`` is the total number of unique x-values across all
+            datasets.
+
+    Raises:
+        ValueError:
+            If input lists have inconsistent lengths or incompatible shapes.
+        ImportError:
+            If ``backend="pandas"`` is requested but pandas is not installed.
+
+    Notes:
+        - This function is designed for scientific workflows where datasets
+          share partially overlapping x-grids.
+        - The returned arrays are suitable for global fitting, residual
+          computation, and uncertainty propagation.
+        - Pandas is treated as an optional dependency and is never exposed
+          in the public API.
+
+    Examples:
+        >>> x1 = np.array([0, 1, 2])
+        >>> y1 = np.array([1.0, 2.0, 3.0])
+        >>> x2 = np.array([1, 2, 3])
+        >>> y2 = np.array([1.5, 2.5, 3.5])
+
+        >>> x, y = merge_xyerr_data([x1, x2], [y1, y2])
+        >>> x
+        array([0, 1, 2, 3])
+
+        >>> y
+        array([[1. , nan],
+               [2. , 1.5],
+               [3. , 2.5],
+               [nan, 3.5]])
+    """
+    def _validate_inputs(xdat_lst, ydat_lst, yerr_lst):
+        if len(xdat_lst) != len(ydat_lst):
+            raise ValueError("xdat_lst and ydat_lst must have same length")
+
+        if yerr_lst is not None and len(yerr_lst) != len(xdat_lst):
+            raise ValueError("yerr_lst must match number of datasets")
+
+        for i, (x, y) in enumerate(zip(xdat_lst, ydat_lst)):
+            if len(x) != len(y):
+                raise ValueError(f"x/y length mismatch in dataset {i}")
+
+
+    _validate_inputs(xdat_lst, ydat_lst, yerr_lst)
+
+    if backend in ("auto", "pandas"):
+        try:
+            import pandas as pd
+            # df =  _merge_xyerr_pandas(xdat_lst, ydat_lst, yerr_lst, pd)
+            # return _pandas_to_numpy(df)
+            return _merge_xyerr_pandas_to_numpy(
+                xdat_lst, ydat_lst, yerr_lst, pd
+            )
+        except ImportError:
+            if backend == "pandas":
+                raise
+            # fallback to NumPy
+
+    return _merge_xyerr_numpy(xdat_lst, ydat_lst, yerr_lst)
