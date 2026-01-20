@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import numpy as np
 from pathlib import Path
+from .decorators import ensurePandas
 from ._typing import LmfitGlobalLike
 from typing import TYPE_CHECKING, Sequence, Optional, Literal, Any
 
@@ -640,6 +641,7 @@ def export_fit_to_json(
 # -----------------------------------------------------------------------------
 # pandas
 # -----------------------------------------------------------------------------
+@ensurePandas
 def export_params_to_dataframe(
     lg: LmfitGlobalLike,
     *,
@@ -652,6 +654,7 @@ def export_params_to_dataframe(
     return pd.DataFrame.from_dict(params, orient="index")
 
 
+@ensurePandas
 def export_data_to_dataframe(
     lg: LmfitGlobalLike,
     *,
@@ -741,3 +744,5 @@ def export_fit_to_numpy(
     )
 
     return x_data, x_fit, y_data, y_fit, resid
+
+

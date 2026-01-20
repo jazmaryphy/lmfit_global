@@ -8,9 +8,10 @@ version = "0.1.0"
 description = "Global fitting of multi-component, multi-dataset models built on top of lmfit"
 readme = "README.md"
 requires-python = ">=3.10"
-
+license = { file = "LICENSE" }
+keywords = []
 authors = [
-    { name = "Muhammad Maikudi Isah" }
+    { name = "Muhammad Maikudi Isah", email = "muhammadmaikudi.isah@gmail.com" }
 ]
 
 dependencies = [

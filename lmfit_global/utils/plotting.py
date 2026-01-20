@@ -16,6 +16,7 @@ from functools import wraps
 import matplotlib.pyplot as plt
 from string import ascii_letters
 from typing import TYPE_CHECKING
+from .decorators import ensureMatplotlib
 # import palettable.colorbrewer.diverging
 
 if TYPE_CHECKING:
@@ -24,25 +25,6 @@ if TYPE_CHECKING:
     from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 logger = logging.getLogger(__name__)
-
-# %%
-# Optional imports
-try:
-    import matplotlib 
-    _HAS_MATPLOTLIB = True
-except Exception:
-    _HAS_MATPLOTLIB = False
-    
-def _ensureMatplotlib(function):
-    if _HAS_MATPLOTLIB:
-        @ft.wraps(function)
-        def wrapper(*args, **kws):
-            return function(*args, **kws)
-        return wrapper
-
-    def no_op(*args, **kwargs):
-        print('matplotlib module is required for plotting the results')
-    return no_op
 
 # %%
 def get_reducer(option):
@@ -158,7 +140,7 @@ def propagate_err(z, dz, option):
     return np.asarray(err)
 
 # %%
-@_ensureMatplotlib
+@ensureMatplotlib
 def pretty_plot(
     width: float = 8,
     height: float | None = None,
@@ -225,7 +207,7 @@ def pretty_plot(
     return ax
 
 
-@_ensureMatplotlib
+@ensureMatplotlib
 def pretty_plot_two_axis(
     x,
     y1,
@@ -327,7 +309,7 @@ def pretty_plot_two_axis(
     return ax1
 
 
-@_ensureMatplotlib
+@ensureMatplotlib
 def get_ax_fig(ax: Axes = None, **kwargs) -> tuple[Axes, Figure]:
     """Helper function used in plot functions supporting an optional Axes argument.
     If ax is None, we build the `matplotlib` figure and create the Axes else
@@ -349,7 +331,7 @@ def get_ax_fig(ax: Axes = None, **kwargs) -> tuple[Axes, Figure]:
     return ax, fig
 
 
-@_ensureMatplotlib
+@ensureMatplotlib
 def get_ax3d_fig(ax: Axes = None, **kwargs) -> tuple[Axes3D, Figure]:
     """Helper function used in plot functions supporting an optional Axes3D
     argument. If ax is None, we build the `matplotlib` figure and create the
@@ -371,7 +353,7 @@ def get_ax3d_fig(ax: Axes = None, **kwargs) -> tuple[Axes3D, Figure]:
     return ax, fig
 
 
-@_ensureMatplotlib
+@ensureMatplotlib
 def get_axarray_fig_plt(
     ax_array,
     nrows=1,
@@ -426,7 +408,7 @@ def get_axarray_fig_plt(
     return ax_array, fig, plt
 
 
-@_ensureMatplotlib
+@ensureMatplotlib
 def get_pretty_axarray(
     ax_array=None,
     nrows: int = 1,
@@ -740,6 +722,7 @@ class FitPlotter:
     def _overlay_data(self, plotwhat: str) -> bool:
         return _PLOT_RULES[plotwhat]["overlay_data"]
     
+    @ensureMatplotlib
     def _plot(
         self, 
         plotwhat, 
@@ -834,55 +817,3 @@ class FitPlotter:
             plt.show()
 
         return ax_main
-
-# %%
-# pretty_plot(width=8, height=6, dpi=100)
-# x=np.linspace(0, 100)
-# y1=np.sin(x)
-# y2=np.cos(x)
-
-
-# # pretty_plot_two_axis(x=x, y1=y1, y2=y2, width=6.5, height=6.5, dpi=100)
-
-# gridspec_kw={
-#     # 'width_ratios': [1.5, 1.2],
-#     'height_ratios': [1.0, 4]
-#     }
-
-# # ax_array, fig, plt = get_axarray_fig_plt(
-# #     ax_array=None,
-# #     nrows=2,
-# #     ncols=1,
-# #     sharex=True,
-# #     sharey= False,
-# #     squeeze= True,
-# #     subplot_kw=None,
-# #     gridspec_kw=gridspec_kw,
-# #     # **fig_kw,
-# # )
-
-# # width, height = ax_array[0].figure.get_size_inches()
-# # width, height
-
-# ax, fig, plt = get_pretty_axarray(
-#     nrows=2, ncols=1,
-#     sharex=True, sharey=False,
-#     gridspec_kw=gridspec_kw,
-#     pretty_kw={"width": 8, "height":8}
-# )
-# ax
-# ax[0].plot(x, y1)
-# ax[1].plot(x, y2)
-
-
-# ax, fig, plt = get_pretty_axarray(
-#     nrows=1, ncols=1,
-#     sharex=False, sharey=False,
-#     gridspec_kw=None,
-#     pretty_kw={"width": 8, "height":6, "dpi":100}
-# )
-
-# %%
-
-
-
