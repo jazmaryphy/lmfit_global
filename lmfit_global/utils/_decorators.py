@@ -62,4 +62,3 @@ def ensurePandas(func):
         return func(*args, **kwargs)
 
     return wrapper
-
