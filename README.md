@@ -1,7 +1,7 @@
 <p align="center">
   <img src="https://raw.githubusercontent.com/jazmaryphy/lmfit_global/main/docs/source/images/logo2.png"
        alt="lmfit-global logo"
-       width="300px" 
+       width="400px" 
        height="400px"
   >
 </p>
