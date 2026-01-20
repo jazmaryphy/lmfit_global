@@ -12,7 +12,6 @@ import logging
 import importlib
 import numpy as np
 import functools as ft
-from functools import wraps
 import matplotlib.pyplot as plt
 from string import ascii_letters
 from typing import TYPE_CHECKING
@@ -480,7 +479,7 @@ def add_fig_kwargs(func):
     See doc string below for the list of supported options.
     """
 
-    @wraps(func)
+    @ft.wraps(func)
     def wrapper(*args, **kwargs):
         # pop the kwds used by the decorator.
         title = kwargs.pop("title", None)
