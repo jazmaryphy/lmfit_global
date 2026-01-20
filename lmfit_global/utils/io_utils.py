@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import numpy as np
 from pathlib import Path
-from .decorators import ensurePandas
+from ._decorators import ensurePandas
 from ._typing import LmfitGlobalLike
 from typing import TYPE_CHECKING, Sequence, Optional, Literal, Any
 

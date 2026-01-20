@@ -16,7 +16,7 @@ from functools import wraps
 import matplotlib.pyplot as plt
 from string import ascii_letters
 from typing import TYPE_CHECKING
-from .decorators import ensureMatplotlib
+from ._decorators import ensureMatplotlib
 # import palettable.colorbrewer.diverging
 
 if TYPE_CHECKING:
