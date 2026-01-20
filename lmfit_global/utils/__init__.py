@@ -25,7 +25,12 @@ __all__ = [
     "parse_xrange",
     "export_ascii",
     "grid_and_eval",
+    "export_fit_to_dict",
+    "export_fit_to_json",
+    "export_fit_to_numpy",
     "build_ascii_columns",
+    "export_data_to_dataframe",
+    "export_params_to_dataframe",
 
     # config
     "get_default_logger",
@@ -77,7 +82,12 @@ from .io_utils import (
     parse_xrange,
     export_ascii,
     grid_and_eval,
+    export_fit_to_dict,
+    export_fit_to_json,
+    export_fit_to_numpy,
     build_ascii_columns,
+    export_data_to_dataframe,
+    export_params_to_dataframe,
 )
 
 # --- Re-export plotting utilities ---

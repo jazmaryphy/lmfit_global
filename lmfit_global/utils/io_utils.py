@@ -1,9 +1,15 @@
 # %%
 from __future__ import annotations
 
+import json
 import numpy as np
 from pathlib import Path
-from typing import Sequence, Optional, Literal
+from ._typing import LmfitGlobalLike
+from typing import TYPE_CHECKING, Sequence, Optional, Literal, Any
+
+# if TYPE_CHECKING:
+#     from lmfit_global.lmfit_global import LmfitGlobal
+#     LmfitGlobalLike = LmfitGlobal
 
 # %%
 def normalize_xrange(x_range):
@@ -351,17 +357,17 @@ def _merge_xyerr_pandas_to_numpy(xdat_lst, ydat_lst, yerr_lst, pd):
     return x, y
 
 
-def _pandas_to_numpy(df):
-    x = df["x"].to_numpy()
-    y = np.column_stack([df[f"y{i}"].to_numpy() for i in range(len(xdat_lst))])
+# def _pandas_to_numpy(df):
+#     x = df["x"].to_numpy()
+#     y = np.column_stack([df[f"y{i}"].to_numpy() for i in range(len(xdat_lst))])
 
-    if yerr_lst is not None:
-        yerr = np.column_stack(
-            [df[f"yerr{i}"].to_numpy() for i in range(len(xdat_lst))]
-        )
-        return x, y, yerr
+#     if yerr_lst is not None:
+#         yerr = np.column_stack(
+#             [df[f"yerr{i}"].to_numpy() for i in range(len(xdat_lst))]
+#         )
+#         return x, y, yerr
 
-    return x, y
+#     return x, y
 
 
 def _merge_xyerr_numpy(xdat_lst, ydat_lst, yerr_lst):
@@ -474,8 +480,8 @@ def merge_xyerr_data(
     if backend in ("auto", "pandas"):
         try:
             import pandas as pd
-            # df =  _merge_xyerr_pandas(xdat_lst, ydat_lst, yerr_lst, pd)
-            # return _pandas_to_numpy(df)
+            # df =  _merge_xyerr_pandas(xdat_lst, ydat_lst, yerr_lst, pd) # deprecated
+            # return _pandas_to_numpy(df) # deprecated
             return _merge_xyerr_pandas_to_numpy(
                 xdat_lst, ydat_lst, yerr_lst, pd
             )
@@ -485,3 +491,253 @@ def merge_xyerr_data(
             # fallback to NumPy
 
     return _merge_xyerr_numpy(xdat_lst, ydat_lst, yerr_lst)
+
+# %%
+def _pad_to_length(arr: np.ndarray, n: int) -> np.ndarray:
+    """Pad 1D or 2D array with NaNs up to length n."""
+    arr = np.asarray(arr, float)
+
+    if arr.ndim == 1:
+        out = np.full(n, np.nan)
+        out[: len(arr)] = arr
+    else:
+        out = np.full((n, arr.shape[1]), np.nan)
+        out[: len(arr), :] = arr
+
+    return out
+
+
+# -----------------------------------------------------------------------------
+# Core exporter
+# -----------------------------------------------------------------------------
+def export_fit_to_dict(
+    lg: LmfitGlobalLike,
+    *,
+    fitdata_kws: dict | None = None,
+) -> dict:
+    """
+    Export all fit results from an ``LmfitGlobal`` instance as a serializable dictionary.
+
+    Args:
+        lg:
+            A fitted ``LmfitGlobal`` instance.
+        fitdata_kws:
+            Optional keyword arguments forwarded to ``lg.get_fitdata()``.
+            For example: ``{"numpoints": 1024}``.
+
+    Raises:
+        RuntimeError:
+            If the fit has not been executed successfully.
+    """
+    if not lg.fit_success or lg.result is None:
+        lg._log_err(
+            "No successful fit available. Call `lg.fit()` before exporting results.",
+            exc=RuntimeError,
+        )
+
+    res = lg.result
+
+    # ---- FitData extraction (centralized here) ----
+    fd = lg.get_fitdata(**(fitdata_kws or {}))
+
+    # ---- Parameters ----
+    params = {}
+    for name, par in res.params.items():
+        params[name] = {
+            "value": par.value,
+            "stderr": par.stderr,
+            "vary": par.vary,
+            "min": par.min,
+            "max": par.max,
+            "expr": par.expr,
+        }
+
+    # ---- Statistics ----
+    stats = {
+        "success": res.success,
+        "method": res.method,
+        "chisqr": res.chisqr,
+        "redchi": res.redchi,
+        "aic": res.aic,
+        "bic": res.bic,
+        "rsquared": lg.rsquared,
+        "ndata": res.ndata,
+        "nfree": res.nfree,
+        "nvarys": res.nvarys,
+        "nfev": res.nfev,
+    }
+
+    # ---- Data & model  ----
+    data_block = {
+        "x": fd.x_data.tolist(),
+        "y": fd.y_data.tolist(),
+        "y_fit": None if fd.y_fit is None else fd.y_fit.tolist(),
+        "residuals": None if fd.resid_fit is None else fd.resid_fit.tolist(),
+    }
+
+    # ---- Components (if available) ----
+    components = None
+    if fd.components is not None:
+        components = {}
+        for dset, comps in fd.components.items():
+            components[str(dset)] = {
+                name: {
+                    "data": vals["data"].tolist(),
+                    "model": vals["model"].tolist(),
+                }
+                for name, vals in comps.items()
+            }
+
+    # ---- Uncertainty (if available) ----
+    uncertainty = None
+    if hasattr(lg, "dely") or hasattr(lg, "dely_predicted"):
+        uncertainty = {
+            "confidence": None if lg.dely is None else lg.dely.tolist(),
+            "prediction": None
+            if lg.dely_predicted is None
+            else lg.dely_predicted.tolist(),
+        }
+
+        if getattr(lg, "dely_comps", None) is not None:
+            uncertainty["components"] = {
+                name: arr.tolist()
+                for name, arr in lg.dely_comps.items()
+            }
+
+    # ---- Final structure ----
+    return {
+        "metadata": {
+            "class": lg.__class__.__name__,
+            "fit_counter": lg._fit_counter,
+            "is_multidataset": lg.ny > 1,
+            "is_multicomponent": lg.is_multicomponent,
+            "component_names": lg.component_names,
+        },
+        "data": data_block,
+        "statistics": stats,
+        "parameters": params,
+        "components": components,
+        "uncertainty": uncertainty,
+    }
+
+
+# -----------------------------------------------------------------------------
+# JSON
+# -----------------------------------------------------------------------------
+def export_fit_to_json(
+    lg: LmfitGlobalLike,
+    *,
+    fitdata_kws: dict | None = None,
+    **json_kws,
+) -> str:
+    """Export fit results to a JSON string."""
+    return json.dumps(
+        export_fit_to_dict(lg, fitdata_kws=fitdata_kws),
+        **json_kws,
+    )
+
+
+# -----------------------------------------------------------------------------
+# pandas
+# -----------------------------------------------------------------------------
+def export_params_to_dataframe(
+    lg: LmfitGlobalLike,
+    *,
+    fitdata_kws: dict | None = None,
+):
+    """Export fit parameters to a pandas DataFrame."""
+    import pandas as pd
+
+    params = export_fit_to_dict(lg, fitdata_kws=fitdata_kws)["parameters"]
+    return pd.DataFrame.from_dict(params, orient="index")
+
+
+def export_data_to_dataframe(
+    lg: LmfitGlobalLike,
+    *,
+    fitdata_kws: dict | None = None,
+):
+    """
+    Export xdat, xfit, ydat, yfit, fitted model, and residuals to a pandas DataFrame.
+
+    Supports dense model grids by padding shorter arrays with NaNs.
+    """
+    import pandas as pd
+
+    fd = lg.get_fitdata(**(fitdata_kws or {}))
+
+    # lengths
+    nrows = max(
+        len(fd.x_data),
+        len(fd.x_model) if fd.x_model is not None else 0,
+    )
+
+    data = {
+        "xdat": _pad_to_length(fd.x_data, nrows),
+    }
+
+    if fd.x_model is not None:
+        data["xfit"] = _pad_to_length(fd.x_model, nrows)
+
+    for i in range(fd.ny):
+        data[f"ydat{i}"] = _pad_to_length(fd.y_data[:, i], nrows)
+
+        if fd.y_fit is not None:
+            data[f"yfit{i}"] = _pad_to_length(fd.y_fit[:, i], nrows)
+
+        if fd.resid_fit is not None:
+            data[f"resid{i}"] = _pad_to_length(fd.resid_fit[:, i], nrows)
+
+    return pd.DataFrame(data)
+
+
+# -----------------------------------------------------------------------------
+# NumPy
+# -----------------------------------------------------------------------------
+def export_fit_to_numpy(
+    lg: LmfitGlobalLike,
+    *,
+    fitdata_kws: dict | None = None,
+):
+    """
+    Export fit results as NumPy arrays with NaN padding.
+
+    Returns
+    -------
+    tuple
+        (x_data, x_fit, y_data, y_fit, residuals)
+
+    Notes
+    -----
+    - Arrays may have different original lengths.
+    - Outputs are padded with NaNs to a common length.
+    """
+    fd = lg.get_fitdata(**(fitdata_kws or {}))
+
+    nrows = max(
+        len(fd.x_data),
+        len(fd.x_model) if fd.x_model is not None else 0,
+    )
+
+    x_data = _pad_to_length(fd.x_data, nrows)
+    x_fit = (
+        _pad_to_length(fd.x_model, nrows)
+        if fd.x_model is not None
+        else None
+    )
+
+    y_data = _pad_to_length(fd.y_data, nrows)
+
+    y_fit = (
+        _pad_to_length(fd.y_fit, nrows)
+        if fd.y_fit is not None
+        else None
+    )
+
+    resid = (
+        _pad_to_length(fd.resid_fit, nrows)
+        if fd.resid_fit is not None
+        else None
+    )
+
+    return x_data, x_fit, y_data, y_fit, resid

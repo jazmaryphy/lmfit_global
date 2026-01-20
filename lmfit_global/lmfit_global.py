@@ -37,7 +37,12 @@ from .utils import (
     parse_xrange,
     export_ascii,
     grid_and_eval,
+    export_fit_to_dict,
+    export_fit_to_json,
+    export_fit_to_numpy,
     build_ascii_columns,
+    export_data_to_dataframe,
+    export_params_to_dataframe,
 )
 
 # %%
@@ -2393,8 +2398,95 @@ class LmfitGlobal:
         self.logger.info("Save completed successfully...")
 
     
-    def export(self):
-        return self
+    def to_dict(self, *, fitdata_kws: dict | None = None):
+        return export_fit_to_dict(self, fitdata_kws=fitdata_kws)
+
+
+    def to_json(self, *, fitdata_kws: dict | None = None, **json_kws):
+        return export_fit_to_json(
+            self,
+            fitdata_kws=fitdata_kws,
+            **json_kws,
+        )
+
+
+    def to_dataframe(self, *, fitdata_kws: dict | None = None):
+        return export_params_to_dataframe(
+            self,
+            fitdata_kws=fitdata_kws,
+        )
+
+
+    def data_to_dataframe(self, *, fitdata_kws: dict | None = None):
+        return export_data_to_dataframe(
+            self,
+            fitdata_kws=fitdata_kws,
+        )
+
+
+    def to_numpy(self, *, fitdata_kws: dict | None = None):
+        return export_fit_to_numpy(
+            self,
+            fitdata_kws=fitdata_kws,
+        )
+
+    
+
+    def export(
+        self,
+        format: str = "dict",
+        *,
+        fitdata_kws: dict | None = None,
+        **kws,
+    ):
+        """
+        Export fit results in a selected format.
+
+        Args:
+            format (str):
+                Export format. Supported values:
+                - ``"dict"``
+                - ``"json"``
+                - ``"params"``      (parameters DataFrame)
+                - ``"data"``        (x, y, fit, residuals DataFrame)
+                - ``"numpy"``
+            fitdata_kws (dict, optional):
+                Keyword arguments forwarded to ``get_fitdata()``,
+                e.g. ``{"numpoints": 2048}``.
+            **kws:
+                Additional keyword arguments forwarded to the
+                underlying exporter (e.g. JSON options).
+
+        Returns:
+            object:
+                Exported representation depending on ``format``.
+
+        Raises:
+            ValueError:
+                If an unsupported format is requested.
+        """
+        fmt = format.lower().strip()
+
+        exporters = {
+            "dict": self.to_dict,
+            "json": self.to_json,
+            "params": self.to_dataframe,
+            "data": self.data_to_dataframe,
+            "numpy": self.to_numpy,
+        }
+
+        try:
+            exporter = exporters[fmt]
+        except KeyError:
+            self._log_err(
+                f"Unknown export format '{format}'. "
+                f"Supported formats are {list(exporters)}",
+                exc=ValueError,
+            )
+
+        return exporter(fitdata_kws=fitdata_kws, **kws)
+
+
     
     # -------------------------------
     # FINAL
@@ -2528,3 +2620,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
