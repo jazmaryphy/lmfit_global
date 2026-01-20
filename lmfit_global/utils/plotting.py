@@ -15,8 +15,8 @@ import functools as ft
 import matplotlib.pyplot as plt
 from string import ascii_letters
 from typing import TYPE_CHECKING
-from ._decorators import ensureMatplotlib
 # import palettable.colorbrewer.diverging
+from ._decorators import ensureMatplotlib
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
