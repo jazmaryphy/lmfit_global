@@ -6,11 +6,56 @@ import numpy as np
 from pathlib import Path
 from ._decorators import ensurePandas
 from ._typing import LmfitGlobalLike
-from typing import TYPE_CHECKING, Sequence, Optional, Literal, Any
+from typing import TYPE_CHECKING, Sequence, Optional, Literal, Iterable
 
 # if TYPE_CHECKING:
 #     from lmfit_global.lmfit_global import LmfitGlobal
 #     LmfitGlobalLike = LmfitGlobal
+
+# %%
+def format_quoted_list(items: Iterable[str]) -> str:
+    """Format an iterable of strings as a human-readable, quoted list.
+
+    The output uses single quotes around each item and joins elements
+    using commas and an ampersand (`&`) according to common
+    human-readable conventions.
+
+    Examples:
+        - ``["a"]`` → ``'a'``
+        - ``["a", "b"]`` → ``'a' & 'b'``
+        - ``["a", "b", "c"]`` → ``'a', 'b' & 'c'``
+
+    Args:
+        items:
+            Iterable of strings to format.
+
+    Returns:
+        A formatted string representation. Returns an empty string
+        if ``items`` is empty.
+
+    Examples:
+        >>> format_quoted_list(["x"])
+        "'x'"
+
+        >>> format_quoted_list(["x", "y"])
+        "'x' & 'y'"
+
+        >>> format_quoted_list(["x", "y", "z"])
+        "'x', 'y' & 'z'"
+    """
+    items = list(items)
+    if not items:
+        return ""
+
+    quoted = [f"'{item}'" for item in items]
+
+    if len(quoted) == 1:
+        return quoted[0]
+
+    if len(quoted) == 2:
+        return " & ".join(quoted)
+
+    return ", ".join(quoted[:-1]) + " & " + quoted[-1]
 
 # %%
 def normalize_xrange(x_range):

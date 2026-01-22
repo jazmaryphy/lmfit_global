@@ -122,27 +122,6 @@ class LmfitGlobal:
             items[0]
             )
         return obj
-    
-    @staticmethod
-    def format_list_of_str(list_of_str: list[str]):
-        """
-        Format iterable of list_of_str as:
-        'a'
-        'a' & 'b'
-        'a', 'b' & 'c'
-        """
-        list_of_str = list(list_of_str)
-        if not list_of_str:
-            return ""
-
-        quoted = [f"'{n}'" for n in list_of_str]
-
-        if len(quoted) == 1:
-            return quoted[0]
-        elif len(quoted) == 2:
-            return " & ".join(quoted)
-        else:
-            return ", ".join(quoted[:-1]) + " & " + quoted[-1]
 
 
     def __init__(
@@ -1269,7 +1248,7 @@ class LmfitGlobal:
             par.expr = reference
         self.init_params[reference].set(vary=vary_flag)
 
-        fmt_names = self.format_list_of_str(names)
+        fmt_names = uio.format_quoted_list(names)
         # self.logger.info(f"Tied parameters: {fmt_names} to reference='{reference}' ...")
         self.logger.info(f"SHARED parameters: {fmt_names} to reference='{reference}' ...")
 
@@ -2630,5 +2609,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
