@@ -2,9 +2,11 @@
 
 `LmfitGlobal` is the **core engine** of the **lmfit-global** package.
 
-It provides a unified interface for performing **global (single-run) curve
-fitting** across **multiple datasets** and **multiple model components**
-using [`lmfit`](https://lmfit.github.io/lmfit-py/).
+It provides a unified interface for performing **global (single-run) curve fitting** across **multiple datasets** and **multiple model components** using [`lmfit`](https://lmfit.github.io/lmfit-py/).
+
+> **Please note**  
+> When dealing with multi-components, components are distinguished with "`c0`",  "`c1`",  & "`c2`", ... labels at the **BEGINNING** of each parameters, while,
+> When dealing with single or multi-datasets, datasets are distinguished with "`0`", "`1`", & "`2`", ... index at the **END** of each parameters.
 
 ---
 
@@ -78,7 +80,7 @@ lg = LmfitGlobal(items, log_level="info")
 lg.set_data(x, np.column_stack([y1, y2, ...]))   # if not define in items above 
 lg.set_xrange(xmin, xmax)                        # if not define in items above  
 # lg.set_nan_polity("omit")    # if data has nans
-lg.fit(nan_polity="omit")      # or set nan poilicy here
+lg.fit(nan_polity="omit")      # or set nan policy here
 lg.report()
 lg.plot()
 ```
