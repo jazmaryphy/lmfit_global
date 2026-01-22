@@ -3,12 +3,12 @@ import numpy as np
 from typing import Union, Iterable, Dict, Any
 
 # %%
-# --- The package lmfit is a MUST
-try:
-    import lmfit
-except Exception as exc:  # pragma: no cover - runtime dependency
-    raise ImportError("lmfit is required. Install with `pip install lmfit`") from exc
+# ----------------------------------------
+# CORE package (LMFIT), MUST be installed
+# ----------------------------------------
+from ._deps import lmfit
 
+# %%
 _UNSET = object()
 
 _ALLOWED_LMFIT_PARAMETER_HINT_KEYS = ('value', 'vary', 'min', 'max', 'expr')

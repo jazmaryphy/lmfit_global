@@ -1,19 +1,38 @@
-"""A collection of tools to read and process lmfit-global."""
+"""
+A collection of tools to read and process lmfit-global.
+
+NOTE
+----
+- This file have multiple functions "messy-kitchen"
+- The *stable public API* is defined in ``utils.api``.
+- This module re-exports symbols for backward compatibility.
+"""
 
 __all__ = [
-    # top-level classes
+    # ============================
+    # CORE-dependency
+    # ============================
+    "lmfit",
+
+    # ============================
+    # Top-level public classes
+    # ============================
     "FitData",
     "ModelSpec",
     "LoggerLike",
     "FitPlotter",
 
-    # parameter utilities
+    # ============================
+    # Parameter utilities
+    # ============================
     "normalize_parameter_specs",
     "_UNSET",
     "_ALLOWED_NUMERIC",
     "_LMFIT_INIT_PARAMETER_DEFAULTS",
 
-    # reporting utilities
+    # ============================
+    # Reporting utilities
+    # ============================
     "wrap_expr",
     "build_expr",
     "pretty_expr",
@@ -21,7 +40,9 @@ __all__ = [
     "r_squared_safe",
     "pretty_print_params",
 
-    # io utilities
+    # ============================
+    # IO utilities
+    # ============================
     "parse_xrange",
     "export_ascii",
     "grid_and_eval",
@@ -32,19 +53,31 @@ __all__ = [
     "export_data_to_dataframe",
     "export_params_to_dataframe",
 
-    # config
+    # ============================
+    # Config / logging
+    # ============================
     "get_default_logger",
 
-    # submodules (optional but often useful)
+    # ============================
+    # Submodules (optional)
+    # ============================
     "builders",
     "io_utils",
     "plotting",
     "reporting",
     "parameters",
     "lineshapes",
+    "api",
 ]
 
-# --- Re-export submodules ---
+# ------------------------------
+# Core dependency (LMFIT)
+# ------------------------------
+from ._deps import lmfit
+
+# ------------------------------
+# Re-export submodules
+# ------------------------------
 from . import (
     builders,
     io_utils,
@@ -52,14 +85,19 @@ from . import (
     reporting,
     parameters,
     lineshapes,
+    api,
 )
 
-# --- Re-export top-level classes ---
+# ------------------------------
+# Core classes
+# ------------------------------
 from .fitdata import FitData
 from .modelspec import ModelSpec
 from ._config import LoggerLike, get_default_logger
 
-# --- Re-export parameter utilities ---
+# ------------------------------
+# Parameter utilities
+# ------------------------------
 from .parameters import (
     _UNSET,
     _ALLOWED_NUMERIC,
@@ -67,7 +105,9 @@ from .parameters import (
     _LMFIT_INIT_PARAMETER_DEFAULTS,
 )
 
-# --- Re-export reporting utilities ---
+# ------------------------------
+# Reporting utilities
+# ------------------------------
 from .reporting import (
     wrap_expr,
     build_expr,
@@ -77,7 +117,9 @@ from .reporting import (
     pretty_print_params,
 )
 
-# --- Re-export IO utilities ---
+# ------------------------------
+# IO utilities
+# ------------------------------
 from .io_utils import (
     parse_xrange,
     export_ascii,
@@ -90,5 +132,26 @@ from .io_utils import (
     export_params_to_dataframe,
 )
 
-# --- Re-export plotting utilities ---
+# ------------------------------
+# Plotting utilities
+# ------------------------------
 from .plotting import FitPlotter
+
+
+### DEPRECTATED WARNINGS
+# from ._deprecation import deprecated
+# from .reporting import pretty_expr as _pretty_expr
+
+# def pretty_expr(*args, **kwargs):
+#     deprecated("pretty_expr", "utils.api.pretty_expr")
+#     return _pretty_expr(*args, **kwargs)
+
+
+# from .parameters import normalize_parameter_specs as _norm
+
+# def normalize_parameter_specs(*args, **kwargs):
+#     deprecated(
+#         "normalize_parameter_specs",
+#         "utils.api.normalize_parameter_specs",
+#     )
+#     return _norm(*args, **kwargs)

@@ -2,11 +2,9 @@
 import re
 import copy
 import inspect
-import logging
 import textwrap
 import itertools
 import numpy as np
-import functools as ft
 
 # %%
 # --- The package lmfit is a MUST
@@ -26,41 +24,6 @@ try:
     from sklearn.metrics import r2_score as sk_r2
 except ImportError:
     sk_r2 = None
-
-# %%
-def get_default_logger(
-    name: str,
-    *,
-    level: int = logging.INFO,
-    fmt: str = "%(levelname)s: %(message)s",
-    propagate: bool = False,
-) -> logging.Logger:
-    """
-    Create or return a safe default logger.
-
-    - Adds a StreamHandler only if none exists
-    - Prevents duplicate logs
-    - Suitable for libraries (not applications)
-
-    Args:
-        name (str): Logger name (usually __name__ or class name)
-        level (int): Logging level (default: INFO)
-        fmt (str): Log format
-        propagate (bool): Whether to propagate to root logger
-
-    Returns:
-        logging.Logger
-    """
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-    logger.propagate = propagate
-
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter(fmt))
-        logger.addHandler(handler)
-
-    return logger
 
 # %%
 def r2_score_util(y_true, y_pred, multioutput='uniform_average'):
@@ -710,5 +673,3 @@ def pretty_print_params(
             pvalues['brute_step'] = (numstyle % '').format(
                 pvalues['brute_step'], n=colwidth, p=precision, f=fmt)
         _out(line.format(name_len=name_len, n=colwidth, p=precision, f=fmt, **pvalues))
-
-

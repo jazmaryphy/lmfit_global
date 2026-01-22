@@ -9,48 +9,29 @@ from typing import Callable, Dict, Iterable, List, Optional, Any
 # %%
 """import utilities codes"""
 
-from .utils import (
-    # core classes
+# ----------------------------------------
+# CORE package (LMFIT), MUST be installed
+# ----------------------------------------
+from .utils import lmfit
+
+# ------------------------------
+# Public API imports (stable)
+# ------------------------------
+from .utils.api import (
     FitData,
     ModelSpec,
     FitPlotter,
     LoggerLike,
-
-    # config
-    get_default_logger,
-
-    # parameter utilities
-    _UNSET,
-    _ALLOWED_NUMERIC,
-    normalize_parameter_specs,
-    _LMFIT_INIT_PARAMETER_DEFAULTS,
-
-    # reporting utilities
-    wrap_expr,
-    build_expr,
-    pretty_expr,
-    lmfit_report,
-    r_squared_safe,
-    pretty_print_params,
-
-    # IO utilities
     parse_xrange,
-    export_ascii,
-    grid_and_eval,
-    export_fit_to_dict,
-    export_fit_to_json,
-    export_fit_to_numpy,
-    build_ascii_columns,
-    export_data_to_dataframe,
-    export_params_to_dataframe,
+    get_default_logger,
 )
 
-# %%
-# --- The package lmfit is a MUST
-try:
-    import lmfit
-except Exception as exc:  # pragma: no cover - runtime dependency
-    raise ImportError("lmfit is required. Install with `pip install lmfit`") from exc
+# ------------------------------
+# Internal utilities (explicit)
+# ------------------------------
+from .utils import io_utils as uio
+from .utils import reporting as urep
+from .utils import parameters as upar
 
 # %%
 _VALID_CONNECTORS = {
@@ -236,6 +217,32 @@ class LmfitGlobal:
         self._build_lmfit_backend()
 
 
+    # @property
+    # def nc(self) -> int:
+    #     return len(self.model_specs)
+
+    # @property
+    # def is_multicomponent(self) -> bool:
+    #     return self.nc > 1
+
+    @property
+    def is_multidataset(self) -> bool:
+        return self.ny > 1
+    
+    @property
+    def model(self):
+        """Public accessor for the built lmfit model."""
+        return self.lmfit_composite_model
+
+    @property
+    def component_names(self) -> list[str]:
+        return [m.prefix.rstrip('_') for m in self.models]
+
+    @property
+    def has_nans(self) -> bool:
+        """Whether the current data contains NaN values."""
+        return getattr(self, "has_nan", False)
+
 
     def _log_err(self, msg, exc=ValueError):
         self.logger.error(msg+' ...')
@@ -245,6 +252,7 @@ class LmfitGlobal:
         """Parse and validate input data and theory definitions."""
         self.logger.info("Parsing inputs...")
         self._parse_data()
+        # self._raise_nan_policy()
         self._parse_functions()
         self._pretty_expr()
 
@@ -436,52 +444,79 @@ class LmfitGlobal:
                 f"N={self.N} points per dataset"
             )
 
-        # -------------------------------------------------
-        # NaN handling
-        # # -------------------------------------------------
-        # self.has_nan = np.isnan(self.ydat).any()
-
-        # if self.has_nan:
-        #     if self.nan_policy == "raise":
-        #         self._log_err(
-        #             "NaNs detected in data but nan_policy='raise'. "
-        #             "Choose {'omit', 'propagate'} or clean the data."
-        #         )
-
-        #     self.logger.warning(
-        #         f"NaNs detected in data; nan_policy='{self.nan_policy}'"
-        #     )
-
-        #     if self.nan_policy == "omit":
-        #         # Remove rows where ANY dataset has NaN
-        #         mask = ~np.isnan(self.ydat).any(axis=1)
-
-        #         if not np.any(mask):
-        #             self._log_err("All data points removed after NaN omission")
-
-        #         self.xdat = self.xdat[mask]
-        #         self.ydat = self.ydat[mask, :]
-
-        #         self.N = self.xdat.size
-
-        #         self.logger.info(
-        #             f"NaN omission applied → remaining N={self.N}"
-        #         )
-
-        #     # nan_policy == "propagate": do nothing
-
         # --- let lmfit handle nan_policy, but we still let user know what to do ---
         self.has_nan = np.isnan(self.ydat).any()
         if self.has_nan:
-            if self.nan_policy == 'raise':
-                self._log_err(
-                    "NaNs detected but nan_policy='raise' ... choose {'omit' or 'propagate'}"
-                )
             self.logger.warning(
                 f"NaNs detected; nan_policy='{self.nan_policy}' ..."
+                f"Use set_nan_policy('omit' or 'propagate')."
             )
 
         self.logger.info("Parsing input data COMPLETED...")
+
+
+    def set_nan_policy(
+        self,
+        nan_policy: str,
+        rebuild: bool = True,
+    ) -> None:
+        """
+        Update the NaN handling policy.
+
+        This controls how NaN values in the dependent data are treated
+        during fitting.
+
+        Args:
+            nan_policy (str): One of {"raise", "omit", "propagate"}.
+            rebuild  (bool, optional):  Whether to rebuild the lmfit backend after 
+                updating the policy. Default is True.
+
+        Notes:
+        - ``"raise"``      : stop immediately if NaNs are present
+        - ``"omit"``       : ignore NaNs during fitting
+        - ``"propagate"``  : allow NaNs to propagate through the model
+
+        lmfit ultimately enforces this policy at minimization time,
+        but this method validates intent early and logs diagnostics.
+        """
+        allowed = {"raise", "omit", "propagate"}
+        if nan_policy not in allowed:
+            self._log_err(
+                f"Invalid nan_policy='{nan_policy}'. "
+                f"Allowed values: {allowed}"
+            )
+
+        if nan_policy == self.nan_policy:
+            self.logger.debug(
+                f"nan_policy already set to '{nan_policy}', no change."
+                # f"Allowed values: {allowed}"
+            )
+            return
+
+        self.logger.info(
+            f"Updating nan_policy: '{self.nan_policy}' -> '{nan_policy}'"
+        )
+
+        self.nan_policy = nan_policy
+
+        # Invalidate fit state
+        self.fit_success = False
+        self.result = None
+
+        if rebuild:
+            self._build_lmfit_backend()
+
+    
+    def _raise_nan_policy(self) -> None:
+        """raise a nan if data has nan"""
+        allowed = {"raise", "omit", "propagate"}
+        if self.has_nan:
+            if self.nan_policy == 'raise':
+                self._log_err(
+                    f"NaNs detected but nan_policy='raise' ... choose {'omit' or 'propagate'} ..."
+                    f"Allowed values: {allowed} ..."
+                    f"Use set_nan_policy('omit' or 'propagate')."
+                )
 
 
     def _parse_functions(self) -> None:
@@ -579,7 +614,6 @@ class LmfitGlobal:
         self,
         x: np.ndarray,
         y: np.ndarray,
-        *,
         yerr: Optional[np.ndarray] = None,
         rebuild: bool = True,
     ) -> None:
@@ -625,19 +659,6 @@ class LmfitGlobal:
             self._build_lmfit_backend()
 
 
-
-    # @property
-    # def nc(self) -> int:
-    #     return len(self.model_specs)
-
-    # @property
-    # def is_multicomponent(self) -> bool:
-    #     return self.nc > 1
-
-    @property
-    def is_multidataset(self) -> bool:
-        return self.ny > 1
-
     # -----------------------------
     # Model construction and params
     # -----------------------------
@@ -681,17 +702,6 @@ class LmfitGlobal:
 
         # self.logger.info("Composite model built successfully")
         self.logger.info("CompositeModel built successfully...")
-
-
-    @property
-    def model(self):
-        """Public accessor for the built lmfit model."""
-        return self.lmfit_composite_model
-        
-
-    @property
-    def component_names(self) -> list[str]:
-        return [m.prefix.rstrip('_') for m in self.models]
 
 
     def _init_parameters(self) -> None:
@@ -764,7 +774,7 @@ class LmfitGlobal:
             par (lmfit.Parameter): Target parameter object.
             attr (str):  Parameter attribute to update. One of:
                 {'value', 'min', 'max', 'vary', 'expr', 'brute_step'}.
-            value (Any): Value to assign. If `_UNSET`, the attribute is left unchanged.
+            value (Any): Value to assign. If `upar._UNSET`, the attribute is left unchanged.
             overwrite_expr (bool, optional): Whether to overwrite an existing expression 
                 (default: False).
 
@@ -772,7 +782,7 @@ class LmfitGlobal:
             TypeError: If value has an invalid type.
             ValueError: If attempting to overwrite an expression or if NaN is provided.
         """
-        if value is _UNSET:
+        if value is upar._UNSET:
             return
 
         # ---------------- expr ----------------
@@ -818,7 +828,7 @@ class LmfitGlobal:
 
         # ---------------- numeric ----------------
         if attr in {"value", "min", "max", "brute_step"}:
-            if not isinstance(value, _ALLOWED_NUMERIC):
+            if not isinstance(value, upar._ALLOWED_NUMERIC):
                 raise TypeError(
                     f"'{attr}' must be int or float for parameter '{par.name}', "
                     f"got {type(value).__name__}"
@@ -877,11 +887,11 @@ class LmfitGlobal:
 
         Args:
             *parlist (Iterable): Parameter specifications accepted by
-                `normalize_parameter_specs`.
+                `upar.normalize_parameter_specs`.
 
-        Defaults are taken from _LMFIT_INIT_PARAMETER_DEFAULTS.
+        Defaults are taken from upar._LMFIT_INIT_PARAMETER_DEFAULTS.
         """
-        pardict = normalize_parameter_specs(*parlist)
+        pardict = upar.normalize_parameter_specs(*parlist)
 
         for name, spec in pardict.items():
             if name in self.init_params:
@@ -889,9 +899,9 @@ class LmfitGlobal:
                 continue
 
             final = {}
-            for key, default in _LMFIT_INIT_PARAMETER_DEFAULTS.items():
-                val = spec.get(key, _UNSET)
-                final[key] = default if val is _UNSET else val
+            for key, default in upar._LMFIT_INIT_PARAMETER_DEFAULTS.items():
+                val = spec.get(key, upar._UNSET)
+                final[key] = default if val is upar._UNSET else val
 
             self.init_params.add(name, **final)
             self.logger.info(f"Added parameter '{name}' with: {final} ...")
@@ -1085,7 +1095,7 @@ class LmfitGlobal:
 
         Args:
             *parlist (Iterable): Parameter specifications accepted by
-                `normalize_parameter_specs`.
+                `upar.normalize_parameter_specs`.
 
             overwrite_expr (bool, optional): If False (default), refuse to overwrite an existing
                 parameter expression.
@@ -1093,7 +1103,7 @@ class LmfitGlobal:
         Raises:
             ValueError: If a parameter already has an expression and ``overwrite_expr=False``.
         """
-        pardict = normalize_parameter_specs(*parlist)
+        pardict = upar.normalize_parameter_specs(*parlist)
 
         for name, spec in pardict.items():
             if name not in self.init_params:
@@ -1106,7 +1116,7 @@ class LmfitGlobal:
             updates = {}
 
             for key, val in spec.items():
-                if val is _UNSET:
+                if val is upar._UNSET:
                     continue  # preserve existing value
                     # print(key, val)
 
@@ -1147,7 +1157,7 @@ class LmfitGlobal:
 
         Args:
             *parlist (Iterable): Parameter names or objects accepted by
-                `normalize_parameter_specs`.
+                `upar.normalize_parameter_specs`.
 
             force (bool, optional): If False (default), refuse to remove parameters that are:
                 - referenced by other parameter expressions
@@ -1156,7 +1166,7 @@ class LmfitGlobal:
         Raises:
             ValueError: If a parameter is referenced by other parameters and force=False.
         """
-        pardict = normalize_parameter_specs(*parlist)
+        pardict = upar.normalize_parameter_specs(*parlist)
         names = list(pardict.keys())
 
         for name in names:
@@ -1224,7 +1234,7 @@ class LmfitGlobal:
         Raises:
             ValueError: If reference parameter not found in  ``init_params``.
         """
-        pardict = normalize_parameter_specs(*parlist)
+        pardict = upar.normalize_parameter_specs(*parlist)
         names = list(pardict.keys())
 
         if not names:
@@ -1584,9 +1594,9 @@ class LmfitGlobal:
 
         # --- R^2 statistics ---
         self.r2_dict = {
-            "raw": r_squared_safe(self.ydat, self.y_sim, multioutput="raw_values"),
-            "mean": r_squared_safe(self.ydat, self.y_sim, multioutput="uniform_average"),
-            "weighted": r_squared_safe(self.ydat, self.y_sim, multioutput="variance_weighted"),
+            "raw": urep.r_squared_safe(self.ydat, self.y_sim, multioutput="raw_values"),
+            "mean": urep.r_squared_safe(self.ydat, self.y_sim, multioutput="uniform_average"),
+            "weighted": urep.r_squared_safe(self.ydat, self.y_sim, multioutput="variance_weighted"),
         }
 
         # Keep backwards compatibility
@@ -2088,19 +2098,19 @@ class LmfitGlobal:
     # -------------------------------
     def _pretty_expr(self) -> None:
         self.logger.info("The model is to be constructed as...")
-        expr = build_expr(
+        expr = urep.build_expr(
             funcs=[spec.func for spec in self.model_specs],
             operators=self.theory_connectors
         )
         expr = f'y(x;) = {expr}'
-        pretty_expr(expr, line_style="#", logger=self.logger)
+        urep.pretty_expr(expr, line_style="#", logger=self.logger)
 
 
     def _verbosity(self) -> None:
         """Print verbosity of fit parameters"""
         self.logger.info('Parameters fit values:')
         # self.result.params.pretty_print()
-        pretty_print_params(params=self.result.params, logger=self.logger)
+        urep.pretty_print_params(params=self.result.params, logger=self.logger)
         self._log_r2(logger=self.logger, precision=8)
 
 
@@ -2184,12 +2194,12 @@ class LmfitGlobal:
 
     def fit_report(self, params, **kws):
         """Return a report of the fitting results."""
-        return lmfit_report(params, rsquared=self.rsquared, **kws)
+        return urep.lmfit_report(params, rsquared=self.rsquared, **kws)
     
 
     def report_fit(self, params, **kws):
         """Print a report of the fitting results."""
-        print(lmfit_report(params, rsquared=self.rsquared, **kws)) 
+        print(urep.lmfit_report(params, rsquared=self.rsquared, **kws)) 
 
 
     def report(
@@ -2222,13 +2232,13 @@ class LmfitGlobal:
         """
         if inpars is None:
             inpars = self.result
-        _report = lmfit_report(
+        _report = urep.lmfit_report(
             inpars=inpars, rsquared=self.rsquared, modelpars=modelpars, show_correl=show_correl, 
             min_correl=min_correl, sort_pars=sort_pars, correl_mode=correl_mode
             )
         
         expr = f'{self.lmfit_composite_model}'
-        modname = wrap_expr(expr=expr, width=80)
+        modname = urep.wrap_expr(expr=expr, width=80)
         _report =  f'[[Model]]\n    {modname}\n{_report}'
         print(_report)
 
@@ -2323,7 +2333,7 @@ class LmfitGlobal:
         y_data = self.y_data
 
         # --- model grid + eval ---
-        x_model, y_model = grid_and_eval(
+        x_model, y_model = uio.grid_and_eval(
             x_data=x_data,
             eval_func=self.eval,
             params=self.result.params,
@@ -2331,7 +2341,7 @@ class LmfitGlobal:
             x_fit=x_fit,
         )
 
-        return build_ascii_columns(
+        return uio.build_ascii_columns(
             x_data=x_data,
             y_data=y_data,
             x_fit=x_model,
@@ -2370,7 +2380,7 @@ class LmfitGlobal:
         format = format.lower().strip()
 
         _SAVE_DISPATCH = {
-            "ascii": export_ascii,
+            "ascii": uio.export_ascii,
             # --- future: ---
             # "csv": export_csv,
             # "npz": export_npz,
@@ -2399,11 +2409,11 @@ class LmfitGlobal:
 
     
     def to_dict(self, *, fitdata_kws: dict | None = None):
-        return export_fit_to_dict(self, fitdata_kws=fitdata_kws)
+        return uio.export_fit_to_dict(self, fitdata_kws=fitdata_kws)
 
 
     def to_json(self, *, fitdata_kws: dict | None = None, **json_kws):
-        return export_fit_to_json(
+        return uio.export_fit_to_json(
             self,
             fitdata_kws=fitdata_kws,
             **json_kws,
@@ -2411,21 +2421,21 @@ class LmfitGlobal:
 
 
     def to_dataframe(self, *, fitdata_kws: dict | None = None):
-        return export_params_to_dataframe(
+        return uio.export_params_to_dataframe(
             self,
             fitdata_kws=fitdata_kws,
         )
 
 
     def data_to_dataframe(self, *, fitdata_kws: dict | None = None):
-        return export_data_to_dataframe(
+        return uio.export_data_to_dataframe(
             self,
             fitdata_kws=fitdata_kws,
         )
 
 
     def to_numpy(self, *, fitdata_kws: dict | None = None):
-        return export_fit_to_numpy(
+        return uio.export_fit_to_numpy(
             self,
             fitdata_kws=fitdata_kws,
         )
