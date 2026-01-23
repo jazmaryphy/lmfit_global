@@ -56,7 +56,7 @@ def lg_simple():
         },
     }
 
-    return LmfitGlobal(items)
+    return LmfitGlobal(items, log_level="info")
 
 
 def test_lmfit_import():
@@ -84,7 +84,7 @@ def test_parameters_explicitly_normalized():
         },
     }
 
-    lg = LmfitGlobal(items)
+    lg = LmfitGlobal(items, log_level="warning")
     lg.set_data(x, y)
 
     params = lg.model_specs[0].init_params
@@ -121,7 +121,7 @@ def test_multicomponent_requires_connectors():
 
 
     with pytest.raises(ValueError, match="theory_connectors"):
-        LmfitGlobal(items)
+        LmfitGlobal(items, log_level="INFO")
 
 
 
@@ -141,7 +141,7 @@ def test_parameters_autogenerate_normalized():
         },
     }
 
-    lg = LmfitGlobal(items)
+    lg = LmfitGlobal(items, log_level="INFO")
     lg.set_data(x, y)
 
     params = lg.model_specs[0].init_params
@@ -184,7 +184,7 @@ def test_parameters_fixedarguments_func_kws():
     }
 
 
-    lg = LmfitGlobal(items)
+    lg = LmfitGlobal(items, log_level="INFO")
     lg.set_data(x, y)
 
     spec = lg.model_specs[1]
@@ -213,7 +213,7 @@ def test_parameters_invalid_initial_parameter():
     }
 
     with pytest.raises(ValueError, match="unexpected `init_params`"):
-        LmfitGlobal(items)
+        LmfitGlobal(items, log_level="WARNING")
 
 
 
@@ -236,7 +236,7 @@ def test_parameters_invalid_initial_parameter_funckws():
     }
 
     with pytest.raises(ValueError):
-        LmfitGlobal(items)
+        LmfitGlobal(items, log_level="CRITICAL")
 
 
 
