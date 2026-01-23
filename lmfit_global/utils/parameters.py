@@ -1,4 +1,5 @@
 # %%
+import inspect
 import numpy as np
 from typing import Union, Iterable, Dict, Any
 
@@ -232,7 +233,7 @@ def normalize_parameter_specs(
 
     return out
 
-
+# %%
 def finalize_parameter_specs(pardict: dict) -> dict:
     """
     Convert canonical parameter specifications into lmfit-ready
@@ -260,3 +261,41 @@ def finalize_parameter_specs(pardict: dict) -> dict:
         out[name] = final
 
     return out
+
+# %%
+def split_function_arguments(func) -> tuple[list[str], dict[str, Any]]:
+    """
+    Split function parameters into fit parameters and fixed keyword arguments.
+
+    Args:
+        func (callable): Model function.
+
+    Returns:
+        fit_params (list[str]):
+            Names of parameters suitable for lmfit fitting.
+        fixed_kws (dict[str, Any]):
+            Keyword arguments with fixed (non-fittable) defaults.
+    """
+    sig = inspect.signature(func)
+    params = list(sig.parameters.values())[1:]  # skip independent var
+
+    fit_params = []
+    fixed_kws = {}
+
+    for p in params:
+        default = p.default
+
+        if default is inspect._empty:
+            # No default → assume fit parameter
+            fit_params.append(p.name)
+
+        elif isinstance(default, _ALLOWED_NUMERIC):
+            fit_params.append(p.name)
+
+        else:
+            # str, None, bool, enums → fixed keyword
+            fixed_kws[p.name] = default
+
+    return fit_params, fixed_kws
+
+
