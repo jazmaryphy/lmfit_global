@@ -24,7 +24,7 @@ from ._config import LoggerLike, get_default_logger
 # ------------------------------
 # Parameter utilities (public)
 # ------------------------------
-from .parameters import normalize_parameter_specs
+from .parameters import finalize_parameter_specs, normalize_parameter_specs
 
 # ------------------------------
 # Reporting utilities (public)
@@ -52,6 +52,7 @@ __all__ = [
     "FitPlotter",
     "LoggerLike",
     "get_default_logger",
+    "finalize_parameter_specs",
     "normalize_parameter_specs",
     "lmfit_report",
     "pretty_print_params",

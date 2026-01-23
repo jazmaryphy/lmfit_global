@@ -173,7 +173,6 @@ class LmfitGlobal:
         self.prefixes: List[str] = []
         self.func_signatures: Dict[Callable, inspect.Signature] = {}
         self.lmfit_composite_model: List[lmfit.model.CompositeModel] = []
-        self.is_multicomponent: bool = False
 
         # cached evaluation
         self.y_ini: Optional[np.ndarray] = None
@@ -196,13 +195,6 @@ class LmfitGlobal:
         self._build_lmfit_backend()
 
 
-    # @property
-    # def nc(self) -> int:
-    #     return len(self.model_specs)
-
-    # @property
-    # def is_multicomponent(self) -> bool:
-    #     return self.nc > 1
 
     @property
     def is_multidataset(self) -> bool:
@@ -222,6 +214,14 @@ class LmfitGlobal:
         """Whether the current data contains NaN values."""
         return getattr(self, "has_nan", False)
 
+    @property
+    def nc(self) -> int:
+        return len(self.model_specs)
+
+    @property
+    def is_multicomponent(self) -> bool:
+        return self.nc > 1
+
 
     def _log_err(self, msg, exc=ValueError):
         self.logger.error(msg+' ...')
@@ -231,8 +231,8 @@ class LmfitGlobal:
         """Parse and validate input data and theory definitions."""
         self.logger.info("Parsing inputs...")
         self._parse_data()
-        # self._raise_nan_policy()
         self._parse_functions()
+        self._parse_theory_connectors()
         self._pretty_expr()
 
 
@@ -499,10 +499,13 @@ class LmfitGlobal:
 
 
     def _parse_functions(self) -> None:
-        self.logger.info("Parsing function models...")
+        """parsing functions"""
 
         def _unexpected(keys, allowed):
             return set(keys) - set(allowed)
+        
+        
+        self.logger.info("Parsing function models...")
 
         funcs = self.items.get('functions') or {}
         theory = funcs.get('theory')
@@ -524,46 +527,121 @@ class LmfitGlobal:
 
             sig = inspect.signature(func)
             self.func_signatures[func] = sig
-            func_args = list(sig.parameters.keys())[1:]  # skip x
+            func_args = list(sig.parameters.keys())[1:]  # skip independent var: assuming="x"
 
             self.logger.debug(
                 f"Model #{i} function: {func.__name__} "
                 f"signature=({', '.join(sig.parameters.keys())})"
             )
 
+
+            # # ----------------------------------
+            # # init_params handling
+            # # ----------------------------------
+            # init_params = entry.get("init_params")
+            # if init_params is None:
+            #     init_params = {}
+
+            # if not isinstance(init_params, dict):
+            #     self._log_err(f"model[{i}] `init_params` must be a dict")
+
+            # if not init_params:
+            #     # --- auto-generate defaults ---
+            #     canon = upar.normalize_parameter_specs(*func_args)
+            #     print("canon =", canon)
+            #     init_params = upar.finalize_parameter_specs(canon)
+            #     print("init_params = ", init_params)
+
+            #     names = uio.format_quoted_list(func_args)
+            #     self.logger.warning(
+            #         f"No `init_params` provided for function '{func.__name__}'. "
+            #         f"Creating default parameters: {names}. "
+            #         "You may update them later using `update_par()` or "
+            #         "`update_params()`."
+            #     )
+            # else:
+            #     # Validate user-provided params
+            #     ua = _unexpected(init_params, func_args)
+            #     if ua:
+            #         self._log_err(
+            #             f"Function '{func.__name__}': unexpected `init_params`={ua}"
+            #         )
+
+            #     canon = upar.normalize_parameter_specs(*func_args)
+            #     print("canon =", canon)
+            #     init_params = upar.finalize_parameter_specs(canon)
+            #     print("init_params = ", init_params)
+
+
+            # # ----------------------------------
+            # # func_kws handling
+            # # ----------------------------------
+            # func_kws = entry.get("func_kws", {})
+            # if not isinstance(func_kws, dict):
+            #     self._log_err(f"model[{i}] `func_kws` must be a dict")
+
+            # uk = _unexpected(func_kws, func_args)
+            # if uk:
+            #     self._log_err(
+            #         f"Function '{func.__name__}': unexpected `func_kws`={uk}"
+            #     )
+
+            
+            # # ----------------------------------
+            # # Store unified ModelSpec
+            # # ----------------------------------
+            # self.model_specs.append(
+            #     ModelSpec(
+            #         func=func,
+            #         init_params=init_params,
+            #         func_kws=func_kws,
+            #     )
+            # )
+
+
             # ----------------------------------
-            # init_params & func_kws validation
+            # init_params handling
             # ----------------------------------
             init_params = entry.get("init_params")
             if not isinstance(init_params, dict):
                 self._log_err(f"model[{i}] `init_params` must be a dict")
 
+            ua = _unexpected(init_params, func_args)
+            if ua:
+                self._log_err(f"Function `{func.__name__}`: unexpected `init_params`={ua}")
+
+            # ----------------------------------
+            # func_kws handling
+            # ----------------------------------
             func_kws = entry.get("func_kws", {})
             if not isinstance(func_kws, dict):
                 self._log_err(f"model[{i}] `func_kws` must be a dict")
 
-            ua = _unexpected(init_params, func_args)
             uk = _unexpected(func_kws, func_args)
-
-            if ua:
-                self._log_err(f"Function `{func.__name__}`: unexpected `init_params`={ua}")
             if uk:
                 self._log_err(f"Function `{func.__name__}`: unexpected `func_kws`={uk}")
 
-            # Store into unified ModelSpec
+            # ----------------------------------
+            # Store unified ModelSpec
+            # ----------------------------------
             self.model_specs.append(
-                ModelSpec(func=func, init_params=init_params, func_kws=func_kws)
+                ModelSpec(
+                    func=func,
+                    init_params=init_params,
+                    func_kws=func_kws,
+                )
             )
 
-        self.nc = len(self.model_specs)
-        self.is_multicomponent = self.nc > 1
+        n_models = len(self.model_specs)
+        kind = "multi-component" if n_models > 1 else "single-component"
+        self.logger.info(f"{n_models} model component(s) detected — {kind} fit...")
+        self.logger.info("Parsing function models COMPLETED...")
 
-        kind = "multi-component" if self.is_multicomponent else "single-component"
-        self.logger.info(f"{self.nc} model component(s) detected — {kind} fit...")
 
-        # -----------------------------------------------------
-        # Parse theory connectors (+, -, *, /)
-        # -----------------------------------------------------
+    def _parse_theory_connectors(self) -> None:
+        """Parse theory connectors (+, -, *, /)"""
+
+        funcs = self.items.get('functions') or {}
         self.theory_connectors = funcs.get("theory_connectors") or []
 
         if self.is_multicomponent:
@@ -586,7 +664,7 @@ class LmfitGlobal:
                     "is defined; connectors will be ignored."
                 )
             self.theory_connectors = []
-        self.logger.info("Parsing function models COMPLETED...")
+        self.logger.info("Parsing function(s) connectors COMPLETED...")
 
 
     def set_data(
@@ -2609,3 +2687,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

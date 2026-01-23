@@ -231,3 +231,32 @@ def normalize_parameter_specs(
         _add_param(item)
 
     return out
+
+
+def finalize_parameter_specs(pardict: dict) -> dict:
+    """
+    Convert canonical parameter specifications into lmfit-ready
+    initialization dictionaries.
+
+    Replaces all `_UNSET` placeholders using
+    `_LMFIT_INIT_PARAMETER_DEFAULTS`.
+
+    Args:
+        pardict (dict):
+            Output of normalize_parameter_specs().
+
+    Returns:
+        dict:
+            Fully expanded parameter initialization dictionary
+            suitable for lmfit.
+    """
+    out = {}
+
+    for name, spec in pardict.items():
+        final = {}
+        for key, default in _LMFIT_INIT_PARAMETER_DEFAULTS.items():
+            val = spec.get(key, _UNSET)
+            final[key] = default if val is _UNSET else val
+        out[name] = final
+
+    return out

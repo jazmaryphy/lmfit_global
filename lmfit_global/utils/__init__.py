@@ -25,6 +25,7 @@ __all__ = [
     # ============================
     # Parameter utilities
     # ============================
+    "finalize_parameter_specs",
     "normalize_parameter_specs",
     "_UNSET",
     "_ALLOWED_NUMERIC",
@@ -101,6 +102,7 @@ from ._config import LoggerLike, get_default_logger
 from .parameters import (
     _UNSET,
     _ALLOWED_NUMERIC,
+    finalize_parameter_specs,
     normalize_parameter_specs,
     _LMFIT_INIT_PARAMETER_DEFAULTS,
 )
