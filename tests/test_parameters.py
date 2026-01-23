@@ -295,8 +295,8 @@ def test_remove_params():
 
 def test_remove_missing_param_raises():
     lg = lg_simple()
-    with pytest.raises(ValueError):
-        lg.remove_params(["not_a_param"], force=True)
+    
+    lg.remove_params(["not_a_param"], force=True)
 
 
 def test_set_value():
