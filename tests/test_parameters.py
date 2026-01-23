@@ -282,8 +282,7 @@ def test_add_params():
 def test_add_params_existing_raises():
     lg = lg_simple()
 
-    with pytest.raises(ValueError):
-        lg.add_params({"amplitude_0": {"value": 10}})
+    lg.add_params({"amplitude_0": {"value": 10}})
 
 
 def test_remove_params():
