@@ -1,6 +1,6 @@
 """A collection of codes & tools to read and process fitting"""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __author__  = "Muhammad Maikudi Isah"
 
 __all__ = [
