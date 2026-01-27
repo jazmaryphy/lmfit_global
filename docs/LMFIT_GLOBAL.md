@@ -44,6 +44,10 @@ lg.set_data(x, ylist)      # set data if not define in items above
 lg.set_nan_policy("omit")  # define NaN policy, "raise", "omit" or "propagate"
 
 lg.plot_init()         # plot init fit data
+# or fancy plot with
+pretty_kw={'width': 6, 'height':6, 'dpi':100} # width and height and dpi of figure, or None to use default settings
+lg.plot_init(numpoints=600, xlabel='x', ylabel='y', pretty_kw=pretty_kw)  # numpoints=None, default, plot init parameters
+plt.show()
 
 parlist = {"alpha": {"value": 2.5,  "min":0, "max": 5, "vary": True}}
 lg.add_par(parlist)      # add new non existing parameters from fit functions
@@ -72,6 +76,9 @@ result = lg.result    # lmfit.MinimizerResult
 lg.report()           # report fit optimized parameters values, uncertainties & correlations, fit statistics, etc
 
 lg.plot()             # plot fit data, including residuals
+# UMCOMMENT BELOW FOR MORE FANCY PLOT
+# pretty_kw={'width': 6, 'height':6, 'dpi':100} # width and height and dpi of figure, or None to use default settings
+# lg.plot(numpoints=600, xlabel='x', ylabel='y', pretty_kw=pretty_kw)  # plot init parameters
 plt.show()
 
 fd = lg.get_fitdata(numpoints=1024)   # structured fit results for plotting and analysis
