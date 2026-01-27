@@ -36,9 +36,14 @@ lg = LmfitGlobal(
     log_level='info'
 )
 
-lg.init_params.pretty_print()  # print initial parameters
+lg.init_params.pretty_print()         # print initial parameters
+lg.pretty_expr  # or lg.theory_expr   # to print model expressions
 
-lg.plot_init()        # plot init fit data
+lg.set_data(x, ylist)      # set data if not define in items above
+
+lg.set_nan_policy("omit")  # define NaN policy, "raise", "omit" or "propagate"
+
+lg.plot_init()         # plot init fit data
 
 parlist = {"alpha": {"value": 2.5,  "min":0, "max": 5, "vary": True}}
 lg.add_par(parlist)      # add new non existing parameters from fit functions
@@ -67,6 +72,7 @@ result = lg.result    # lmfit.MinimizerResult
 lg.report()           # report fit optimized parameters values, uncertainties & correlations, fit statistics, etc
 
 lg.plot()             # plot fit data, including residuals
+plt.show()
 
 fd = lg.get_fitdata(numpoints=1024)   # structured fit results for plotting and analysis
 

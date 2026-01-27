@@ -111,7 +111,7 @@ def validate_xrange(xmin, xmax):
     return xmin, xmax
 
 
-def parse_xrange(x_range, *, xdata=None, clip=True, logger=None):
+def parse_xrange(x_range, xdata=None, clip=True, logger=None):
     """
     Parse, validate, and optionally clip xrange.
 
@@ -253,7 +253,6 @@ def grid_and_eval(
 def export_ascii(
     lg,
     filename: str,
-    *,
     numpoints: int | None = None,
     x_fit: np.ndarray | None = None,
     header: bool = True,
@@ -403,19 +402,6 @@ def _merge_xyerr_pandas_to_numpy(xdat_lst, ydat_lst, yerr_lst, pd):
     return x, y
 
 
-# def _pandas_to_numpy(df):
-#     x = df["x"].to_numpy()
-#     y = np.column_stack([df[f"y{i}"].to_numpy() for i in range(len(xdat_lst))])
-
-#     if yerr_lst is not None:
-#         yerr = np.column_stack(
-#             [df[f"yerr{i}"].to_numpy() for i in range(len(xdat_lst))]
-#         )
-#         return x, y, yerr
-
-#     return x, y
-
-
 def _merge_xyerr_numpy(xdat_lst, ydat_lst, yerr_lst):
     all_x = np.unique(np.concatenate(xdat_lst))
     n = len(xdat_lst)
@@ -439,7 +425,6 @@ def merge_xyerr_data(
     xdat_lst: Sequence[np.ndarray],
     ydat_lst: Sequence[np.ndarray],
     yerr_lst: Optional[Sequence[np.ndarray]] = None,
-    *,
     backend: Literal["auto", "numpy", "pandas"] = "auto",
 ):
     """Merge multiple (x, y[, yerr]) datasets onto a shared x-grid.
@@ -558,7 +543,6 @@ def _pad_to_length(arr: np.ndarray, n: int) -> np.ndarray:
 # -----------------------------------------------------------------------------
 def export_fit_to_dict(
     lg: LmfitGlobalLike,
-    *,
     fitdata_kws: dict | None = None,
 ) -> dict:
     """
@@ -672,7 +656,6 @@ def export_fit_to_dict(
 # -----------------------------------------------------------------------------
 def export_fit_to_json(
     lg: LmfitGlobalLike,
-    *,
     fitdata_kws: dict | None = None,
     **json_kws,
 ) -> str:
@@ -689,7 +672,6 @@ def export_fit_to_json(
 @ensurePandas
 def export_params_to_dataframe(
     lg: LmfitGlobalLike,
-    *,
     fitdata_kws: dict | None = None,
 ):
     """Export fit parameters to a pandas DataFrame."""
@@ -702,7 +684,6 @@ def export_params_to_dataframe(
 @ensurePandas
 def export_data_to_dataframe(
     lg: LmfitGlobalLike,
-    *,
     fitdata_kws: dict | None = None,
 ):
     """
@@ -744,7 +725,6 @@ def export_data_to_dataframe(
 # -----------------------------------------------------------------------------
 def export_fit_to_numpy(
     lg: LmfitGlobalLike,
-    *,
     fitdata_kws: dict | None = None,
 ):
     """
@@ -789,5 +769,3 @@ def export_fit_to_numpy(
     )
 
     return x_data, x_fit, y_data, y_fit, resid
-
-

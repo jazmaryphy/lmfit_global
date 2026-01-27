@@ -18,60 +18,10 @@ class LoggerLike(Protocol):
 
 
 Logger: TypeAlias = LoggerLike
-# Logger: TypeAlias = logging.Logger
-
-# %%
-# def get_default_logger(
-#     name: str,
-#     *,
-#     log_level: Optional[int] = None,
-#     # log_level: Optional[int] = logging.INFO,
-#     propagate: bool = False,
-# ) -> logging.Logger:
-#     """Create or return a safe default logger.
-
-#     This function:
-#     - Does not configure global logging
-#     - Avoids duplicate handlers
-#     - Adds a fallback StreamHandler only if logging is unconfigured
-#     - Plays well with application-level logging configs
-
-#     Args:
-#         name: Logger name (typically ``__name__``).
-#         log_level (int): Logging level (default: INFO). 
-#             If None, inherit from parent.
-#         propagate: Whether to propagate records to the root logger.
-
-#     Returns:
-#         A configured ``logging.Logger`` instance.
-#     """
-#     logger = logging.getLogger(name)
-
-#     if log_level is not None:
-#         try:
-#             logger.setLevel(getattr(logging, log_level.upper()))
-#         except:
-#             logger.warning(f"Invalid logging level log_level='{log_level}' ...")
-#     # logger.setLevel(level)
-
-#     logger.propagate = propagate
-
-#     # Fallback handler only if *no* handlers exist anywhere
-#     if not logging.getLogger().handlers:
-#         handler = logging.StreamHandler(sys.stderr)
-#         formatter = logging.Formatter(
-#             "%(levelname)s: %(name)s: %(message)s"
-#             # "%(levelname)s: %(message)s"
-#         )
-#         handler.setFormatter(formatter)
-#         logger.addHandler(handler)
-
-#     return logger
 
 # %%
 def get_default_logger(
     name: str,
-    *,
     log_level: str = "",
     propagate: bool = False,
 ) -> logging.Logger:

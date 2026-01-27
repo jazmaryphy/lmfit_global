@@ -84,7 +84,6 @@ class FitData:
     def from_lmfitglobal(
         cls,
         lg: LmfitGlobalLike,
-        *,
         numpoints: int | None = None,
     ) -> "FitData":
         """

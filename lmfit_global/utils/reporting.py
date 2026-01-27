@@ -618,7 +618,6 @@ def pretty_repr_params(params):
 
 def pretty_print_params(
     params,
-    *,
     logger=None,
     colwidth=8,
     precision=4,

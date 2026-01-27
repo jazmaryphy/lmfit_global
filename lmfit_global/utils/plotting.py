@@ -470,6 +470,7 @@ def get_pretty_axarray(
     return ax_array, fig, plt_mod
 
 
+@ensureMatplotlib
 def add_fig_kwargs(func):
     """Decorator that adds keyword arguments for functions returning matplotlib
     figures.
@@ -564,9 +565,9 @@ def add_fig_kwargs(func):
     return wrapper
 
 # %%
+@ensureMatplotlib
 def plot_from_fitdata(
     fitdata,
-    *,
     ax,
     plotwhat: str,
     fmt: str,
@@ -725,7 +726,6 @@ class FitPlotter:
     def _plot(
         self, 
         plotwhat, 
-        *, 
         ax=None, 
         yerr=None,
         xlabel=None, 
