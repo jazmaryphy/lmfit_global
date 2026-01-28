@@ -241,16 +241,9 @@ def backline(x, backline=0.0):
     return np.full_like(x, backline)
 
 
-# Artificial data
-N = 50
-x = np.linspace(-5, 10, N)
-truepars = [10.0, 5.0, 1.0, 0.0]
-rms_data = 0.8
-rms_err = 0.2
-
-y = gaussian(x, 10.0, 5.0, 1.0) + backline(x, backline=0)
-err = np.random.normal(0.2, rms_err, N)
-err = np.random.lognormal(mean=np.log(0.2), sigma=rms_err, size=N)
+y2 = y + backline(x, backline=0.02)
+N = len(x)
+err = np.abs(np.random.normal(0.2, 0.2, N))
 
 #err = err*0 + 1
 
@@ -263,7 +256,7 @@ items = {
             {
                 "func_name": gaussian,
                 "init_params": {
-                    "amp": dict(value=9.0, min=0),
+                    "amp": dict(value=5.0, min=0),
                     "cen": dict(value=4.5),
                     "wid": dict(value=0.8, min=0),                    
                 },
@@ -280,7 +273,7 @@ items = {
 }
 
 lg = LmfitGlobal(items, log_level='info')
-lg.set_data(x, y)
+lg.set_data(x, y2)
 lg.theory_expr # or lg.pretty_expr
 
 lg.fit(verbose=True)  # 
@@ -293,7 +286,7 @@ dely = lg.dely
 dely_comps = lg.dely_comps
 
 # make finely spaced grid of duration values, extending past data range
-xfine = np.linspace(-5, 10, N*2)
+xfine = np.linspace(-1, 10, N*2)
 yfine = lg.eval(x=xfine)
 
 # now calculate uncertainty interval and predicted interval for sigma=2, 95% level
@@ -301,9 +294,8 @@ efine = lg.eval_uncertainty(x=xfine, sigma=2)
 pfine = lg.dely_predicted
 
 
-# plt.errorbar(x, y, yerr=err, fmt='o', label='Data')
-plt.errorbar(x, y, yerr=None, fmt='o', label='Data')
-plt.plot(xfine, yfine, '-', label='best fit')
+plt.errorbar(x, y, yerr=err, fmt='o', zorder=1, label='Data')
+plt.plot(xfine, yfine, '-', zorder=2, label='best fit')
 for i in range(lg.ny):
     plt.fill_between(
         xfine, yfine[:, i]-efine[:, i], yfine[:, i]+efine[:, i], color="#c0c0c0", label=r'confidence interval'
