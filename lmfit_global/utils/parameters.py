@@ -1,7 +1,10 @@
 # %%
+import sys
 import inspect
+import numbers
 import numpy as np
-from typing import Union, Iterable, Dict, Any
+from collections import namedtuple
+from typing import Union, Iterable, Callable, Dict, Any
 
 # %%
 # ----------------------------------------
@@ -22,6 +25,113 @@ _LMFIT_INIT_PARAMETER_DEFAULTS = {
         }
 
 _ALLOWED_NUMERIC = (int, float)
+PY314_PLUS = sys.version_info >= (3, 14)
+
+# %%
+if PY314_PLUS:
+    import annotationlib
+
+    def wrapped_inspect_signature(obj):
+        """Return inspect.Signature with legacy-compatible annotations."""
+        return inspect.signature(
+            obj,
+            annotation_format=annotationlib.Format.FORWARDREF,
+        )
+else:
+    wrapped_inspect_signature = inspect.signature
+
+
+# ---------------------------------------------------------
+# getfullargspec replacement
+# ---------------------------------------------------------
+
+FullArgSpec = namedtuple(
+    "FullArgSpec",
+    [
+        "args",
+        "varargs",
+        "varkw",
+        "defaults",
+        "kwonlyargs",
+        "kwonlydefaults",
+        "annotations",
+    ],
+)
+
+
+def getfullargspec_no_self(func) -> FullArgSpec:
+    """
+    Modern replacement for inspect.getfullargspec using inspect.signature.
+
+    Removes 'self' for bound methods for consistency across Python versions.
+    """
+
+    sig = wrapped_inspect_signature(func)
+    params = list(sig.parameters.values())
+
+    # Positional args
+    args = [
+        p.name
+        for p in params
+        if p.kind in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        )
+    ]
+
+    # Remove self if bound method
+    if inspect.ismethod(func) and args:
+        args = args[1:]
+
+    # *args
+    varargs = next(
+        (p.name for p in params if p.kind == inspect.Parameter.VAR_POSITIONAL),
+        None,
+    )
+
+    # **kwargs
+    varkw = next(
+        (p.name for p in params if p.kind == inspect.Parameter.VAR_KEYWORD),
+        None,
+    )
+
+    # Defaults (correct alignment with args)
+    pos_params = [
+        p for p in params
+        if p.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
+    ]
+
+    default_vals = [p.default for p in pos_params if p.default is not p.empty]
+    defaults = tuple(default_vals) if default_vals else None
+
+    # Keyword-only args
+    kwonlyargs = [
+        p.name for p in params
+        if p.kind == inspect.Parameter.KEYWORD_ONLY
+    ]
+
+    kwonlydefaults = {
+        p.name: p.default
+        for p in params
+        if p.kind == inspect.Parameter.KEYWORD_ONLY
+        and p.default is not p.empty
+    } or None
+
+    annotations = {
+        p.name: p.annotation
+        for p in params
+        if p.annotation is not p.empty
+    }
+
+    return FullArgSpec(
+        args,
+        varargs,
+        varkw,
+        defaults,
+        kwonlyargs,
+        kwonlydefaults,
+        annotations,
+    )
 
 # %%
 def normalize_parameter_specs(
@@ -263,9 +373,47 @@ def finalize_parameter_specs(pardict: dict) -> dict:
     return out
 
 # %%
-def split_function_arguments(func) -> tuple[list[str], dict[str, Any]]:
+# def split_function_arguments(func) -> tuple[list[str], dict[str, Any]]:
+#     """
+#     Split function parameters into fit parameters and fixed keyword arguments.
+
+#     Args:
+#         func (callable): Model function.
+
+#     Returns:
+#         fit_params (list[str]):
+#             Names of parameters suitable for lmfit fitting.
+#         fixed_kws (dict[str, Any]):
+#             Keyword arguments with fixed (non-fittable) defaults.
+#     """
+#     sig = inspect.signature(func)
+#     params = list(sig.parameters.values())[1:]  # skip independent var
+
+#     fit_params = []
+#     fixed_kws = {}
+
+#     for p in params:
+#         default = p.default
+
+#         if default is inspect._empty:
+#             # No default → assume fit parameter
+#             fit_params.append(p.name)
+
+#         elif isinstance(default, _ALLOWED_NUMERIC):
+#             fit_params.append(p.name)
+
+#         else:
+#             # str, None, bool, enums → fixed keyword
+#             fixed_kws[p.name] = default
+
+#     return fit_params, fixed_kws
+
+
+def split_function_arguments(
+    func: Callable,
+) -> tuple[list[str], dict[str, Any]]:
     """
-    Split function parameters into fit parameters and fixed keyword arguments.
+    Split function parameters into fit parameters and fixed keywords.
 
     Args:
         func (callable): Model function.
@@ -276,26 +424,36 @@ def split_function_arguments(func) -> tuple[list[str], dict[str, Any]]:
         fixed_kws (dict[str, Any]):
             Keyword arguments with fixed (non-fittable) defaults.
     """
-    sig = inspect.signature(func)
-    params = list(sig.parameters.values())[1:]  # skip independent var
 
-    fit_params = []
-    fixed_kws = {}
+    spec = getfullargspec_no_self(func)
 
-    for p in params:
-        default = p.default
+    # Skip independent variable
+    args = spec.args[1:]
 
-        if default is inspect._empty:
-            # No default → assume fit parameter
-            fit_params.append(p.name)
+    fit_params: list[str] = []
+    fixed_kws: dict[str, Any] = {}
 
-        elif isinstance(default, _ALLOWED_NUMERIC):
-            fit_params.append(p.name)
+    defaults = spec.defaults or ()
+    n_defaults = len(defaults)
 
+    # Map args → defaults
+    default_map = {
+        name: defaults[i - (len(args) - n_defaults)]
+        for i, name in enumerate(args)
+        if i >= len(args) - n_defaults
+    }
+
+    for name in args:
+
+        if name not in default_map:
+            fit_params.append(name)
+            continue
+
+        default = default_map[name]
+
+        if isinstance(default, numbers.Real):
+            fit_params.append(name)
         else:
-            # str, None, bool, enums → fixed keyword
-            fixed_kws[p.name] = default
+            fixed_kws[name] = default
 
     return fit_params, fixed_kws
-
-
