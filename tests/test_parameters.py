@@ -55,7 +55,7 @@ def lg_simple():
 
 
 def test_lmfit_import():
-    from lmfit_global.utils import lmfit
+    from lmfit_global.utils._deps import lmfit 
     assert hasattr(lmfit, "Parameters")
 
 
