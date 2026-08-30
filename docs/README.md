@@ -45,7 +45,7 @@ lmfit_global/
 ├── lmfit_global/
 │   ├── __init__.py
 │   │
-│   ├── lmfit_global.py     # Core global fitting engine
+│   ├── core.py             # Core global fitting engine
 │   ├── simplefit.py        # Lightweight SciPy-like fitting interface
 │   │
 │   ├── utils/              # Internal utilities (I/O, plotting, builders, etc)
@@ -71,7 +71,7 @@ lmfit_global/
 │   │   ├── .
 │   │   └── lineshapes.py
 │   │
-│   ├── lmfit_global.py       # Core LmfitGlobal implementation     
+│   ├── core.py               # Core LmfitGlobal implementation     
 │   ├── simplefit.py          # Analogous to scipy.optimize implementation  
 │
 ├── tests/                    # Test Suite           
@@ -97,7 +97,7 @@ lmfit_global/
 │   │   ├── parameters.py
 │   │   └── lineshapes.py
 │   │
-│   ├── lmfit_global.py       # Core LmfitGlobal implementation     
+│   ├── core.py               # Core LmfitGlobal implementation     
 │   ├── simplefit.py          # Analogous to scipy.optimize implementation  
 │
 ├── tests/                    # Test Suite           
@@ -123,4 +123,10 @@ cd examples/
 
 ## License
 
-MIT — Created by [Muhammad Maikudi ISAH](https://x.com/heyitsmisah)
+MIT — Created by [Muhammad Maikudi ISAH](https://jazmaryphy.github.io/)
+
+### 📬 Contact & Links
+
+- **Website:** [jazmaryphy.github.io](https://jazmaryphy.github.io/)
+- **LinkedIn:** [linkedin.com/in/iammisah](https://www.linkedin.com/in/iammisah)
+- **X (Twitter):** [@heyitsmisah](https://x.com/heyitsmisah)

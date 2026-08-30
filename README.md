@@ -122,4 +122,10 @@ cd examples/
 
 ## License
 
-MIT — Created by [Muhammad Maikudi ISAH](https://x.com/heyitsmisah)
+MIT — Created by [Muhammad Maikudi ISAH](https://jazmaryphy.github.io/)
+
+### 📬 Contact & Links
+
+- **Website:** [jazmaryphy.github.io](https://jazmaryphy.github.io/)
+- **LinkedIn:** [linkedin.com/in/iammisah](https://www.linkedin.com/in/iammisah)
+- **X (Twitter):** [@heyitsmisah](https://x.com/heyitsmisah)
