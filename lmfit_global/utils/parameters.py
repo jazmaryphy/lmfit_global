@@ -6,11 +6,8 @@ import numpy as np
 from collections import namedtuple
 from typing import Union, Iterable, Callable, Dict, Any
 
-# %%
-# ----------------------------------------
 # CORE package (LMFIT), MUST be installed
-# ----------------------------------------
-from ._deps import lmfit
+from lmfit_global.utils._deps import lmfit
 
 # %%
 _UNSET = object()

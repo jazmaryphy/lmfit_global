@@ -342,5 +342,3 @@ class GlobalFitBuilder:
             f"models={len(self._models)}, "
             f"xrange={self._xrange})"
         )
-
-

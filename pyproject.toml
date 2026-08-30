@@ -24,3 +24,7 @@ dependencies = [
 uncertainty = ["scipy"]
 plot = ["matplotlib", "palettable"]
 ml = ["scikit-learn"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lmfit_global*"]

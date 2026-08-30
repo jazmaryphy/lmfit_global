@@ -16,7 +16,6 @@ except (ImportError, ModuleNotFoundError):
     from lmfit_global import LmfitGlobal
 
 import matplotlib.pyplot as plt
-# sys.path
 
 # %% [markdown]
 # # Define `LmfitGlobal` class `items` data

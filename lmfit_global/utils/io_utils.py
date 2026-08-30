@@ -4,13 +4,10 @@ from __future__ import annotations
 import json
 import numpy as np
 from pathlib import Path
-from ._decorators import ensurePandas
-from ._typing import LmfitGlobalLike
 from typing import TYPE_CHECKING, Sequence, Optional, Literal, Iterable
 
-# if TYPE_CHECKING:
-#     from lmfit_global.lmfit_global import LmfitGlobal
-#     LmfitGlobalLike = LmfitGlobal
+from lmfit_global.utils._decorators import ensurePandas
+from lmfit_global.utils._typing import LmfitGlobalLike
 
 # %%
 def format_quoted_list(items: Iterable[str]) -> str:
@@ -538,9 +535,7 @@ def _pad_to_length(arr: np.ndarray, n: int) -> np.ndarray:
     return out
 
 
-# -----------------------------------------------------------------------------
 # Core exporter
-# -----------------------------------------------------------------------------
 def export_fit_to_dict(
     lg: LmfitGlobalLike,
     fitdata_kws: dict | None = None,
@@ -651,9 +646,7 @@ def export_fit_to_dict(
     }
 
 
-# -----------------------------------------------------------------------------
 # JSON
-# -----------------------------------------------------------------------------
 def export_fit_to_json(
     lg: LmfitGlobalLike,
     fitdata_kws: dict | None = None,
@@ -666,9 +659,7 @@ def export_fit_to_json(
     )
 
 
-# -----------------------------------------------------------------------------
 # pandas
-# -----------------------------------------------------------------------------
 @ensurePandas
 def export_params_to_dataframe(
     lg: LmfitGlobalLike,
@@ -720,9 +711,7 @@ def export_data_to_dataframe(
     return pd.DataFrame(data)
 
 
-# -----------------------------------------------------------------------------
 # NumPy
-# -----------------------------------------------------------------------------
 def export_fit_to_numpy(
     lg: LmfitGlobalLike,
     fitdata_kws: dict | None = None,

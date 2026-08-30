@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-# coding: utf-8
-
+# %% [markdown]
 # # Fit Multiple Data Sets
 # 
 # This example shows how to use `lmfit_global.LmfitGlobal` class to fit multiple (simulated) Gaussian data sets simultaneously. 
@@ -8,9 +6,7 @@
 # This example is similar to `example_fit_multi_datasets.py` of [lmfit examples](https://lmfit.github.io/lmfit-py/examples/index.html) or [github link](https://github.com/lmfit/lmfit-py/tree/master/examples)
 # 
 
-# In[1]:
-
-
+# %%
 try:
     from lmfit_global import LmfitGlobal
 except (ImportError, ModuleNotFoundError):
@@ -20,16 +16,13 @@ except (ImportError, ModuleNotFoundError):
     from lmfit_global import LmfitGlobal
 
 import matplotlib.pyplot as plt
-# sys.path
 
-
+# %% [markdown]
 # # Define `LmfitGlobal` class `items` data
 # 
 # First, create raw data... (always in nd.array with shape N, ny)
 
-# In[2]:
-
-
+# %%
 import numpy as np
 log2 = np.log(2)
 s2pi = np.sqrt(2*np.pi)
@@ -88,12 +81,10 @@ for i in range(ndata):
     plt.plot(x, dat, 'o')
 plt.show()
 
-
+# %% [markdown]
 # finally, built `data` and `function` **`items`** `dict` for `LmfitGlobal` ...
 
-# In[3]:
-
-
+# %%
 # data dict
 data_dict = {
     'xy': xy,         # data_xy, i.e numpy.column_stack([x, y_0, y_1, ..., y_n])
@@ -129,20 +120,16 @@ items = {
     'functions': function_dict,     # 2. theory (see above)
 }
 
-
+# %% [markdown]
 # call `LmfitGlobal` class ...
 
-# In[4]:
-
-
+# %%
 lg = LmfitGlobal(items, log_level='info')
 
-
+# %% [markdown]
 # (Optional) print & plot initial parameter definitions...
 
-# In[ ]:
-
-
+# %%
 lg.init_params.pretty_print()  # pretty print initial parameters 
 # The parameternames_{index} is generic how the cord works to indicate data index
 # for multidatasets parameternames_0, parametername_1, ..., will be displayed
@@ -152,28 +139,22 @@ pretty_kw={'width': 6, 'height':6, 'dpi':100} # width and height and dpi of figu
 lg.plot_init(numpoints=None, xlabel='x', ylabel='y', pretty_kw=pretty_kw)  # plot init parameters
 plt.show()
 
-
+# %% [markdown]
 # Now, do fit...
 
-# In[ ]:
-
-
+# %%
 lg.fit(verbose=True)  # verbose, if True will show fit parameters
 
-
+# %% [markdown]
 # or better use: `.report()` ...
 
-# In[ ]:
-
-
+# %%
 lg.report()
 
-
+# %% [markdown]
 # plot fit...(Fancy LmfitGlobal matplotlib)
 
-# In[ ]:
-
-
+# %%
 # --- fancy plots ---
 pretty_kw={'width': 6, 'height':6, 'dpi':100} # width and height and dpi of figure, or None to use default settings
 lg.plot_fit(plot_residual=True, numpoints=None, xlabel='x', ylabel='y', pretty_kw=pretty_kw)  # plot fit parameters
@@ -182,6 +163,7 @@ lg.plot_fit(plot_residual=True, numpoints=None, xlabel='x', ylabel='y', pretty_k
 plt.show()
 
 
+# %% [markdown]
 # From fit parameters shown above, its clear that `sigma_0, sigma_1, ..., sigma_4` 
 # 
 # can be set as global parameters (nearly constant width `sigma`$\sim$ 0.3)
@@ -212,36 +194,28 @@ plt.show()
 # *parlist: Union[str, list[str], lmfit.Parameter, lmfit.Parameters, Iterable, Dict]
 # ```
 
-# In[ ]:
-
-
+# %%
 lg.rebuild()  # rebuild LmfitGlobal
 
 parlist = [f'sigma_{i}' for i in range(5)]  # list of str
 lg.set_global(parlist, reference='sigma_0', overwrite_expr=True) # if reference=None default reference=parlist[0]
 
-
+# %% [markdown]
 # (re-fit): Now, do fit...
 
-# In[ ]:
-
-
+# %%
 lg.fit(verbose=True)  # verbose, if True will show fit parameters
 
-
+# %% [markdown]
 # (re-fit): or better use: `.report()` ...
 
-# In[ ]:
-
-
+# %%
 lg.report()
 
-
+# %% [markdown]
 # (re-fit): plot fit...(Fancy LmfitGlobal matplotlib)
 
-# In[ ]:
-
-
+# %%
 # --- fancy plots ---
 pretty_kw={'width': 6, 'height':6, 'dpi':100} # width and height and dpi of figure, or None to use default settings
 lg.plot_fit(plot_residual=True, numpoints=None, xlabel='x', ylabel='y', pretty_kw=pretty_kw)  # plot fit parameters
@@ -250,11 +224,10 @@ lg.plot_fit(plot_residual=True, numpoints=None, xlabel='x', ylabel='y', pretty_k
 plt.show()
 
 
+# %% [markdown]
 # get FitData object: (for more user friendly data handling & plotting...)
 
-# In[ ]:
-
-
+# %%
 def _data_label(i: int, is_multidataset: bool) -> str | None:
     if is_multidataset:
         return f"data {i+1}"
@@ -322,4 +295,3 @@ plt.show()
 
 # see next examples on how we can handle multi-component fit
 # and using util.utils.GlobalFitBuilder() class to create LmfitGlobal items
-

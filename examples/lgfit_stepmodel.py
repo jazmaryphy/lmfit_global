@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-# coding: utf-8
-
+# %% [markdown]
 # # Builtinmodels - stepmodel
 # 
 # This example shows how to use `lmfit_global.LmfitGlobal` class to fit data with stepmodel of different kind
@@ -9,12 +7,10 @@
 # This example is similar to `builtinmodels_stepmodel.py` of [lmfit examples](https://lmfit.github.io/lmfit-py/examples/index.html) or [github link](https://github.com/lmfit/lmfit-py/tree/master/examples)
 # 
 
-# In[1]:
-
-
+# %%
 try:
     from lmfit_global import LmfitGlobal
-    from lmfit_global.utils.builders import GlobalFitBuilder
+    from lmfit_global.utils.builders import build_items, GlobalFitBuilder
 except (ImportError, ModuleNotFoundError):
     import os, sys
     ROOT = os.path.abspath("..")  # parent of examples
@@ -25,10 +21,7 @@ except (ImportError, ModuleNotFoundError):
 
 import matplotlib.pyplot as plt
 
-
-# In[2]:
-
-
+# %%
 import numpy as np
 from scipy.special import erf
 log2 = np.log(2)
@@ -102,10 +95,7 @@ y[48:77] = np.arange(77-48)/(77.0-48)
 np.random.seed(0)
 y = 110.2 * (y + 9e-3*np.random.randn(x.size)) + 12.0 + 2.22*x
 
-
-# In[3]:
-
-
+# %%
 init_step = {
     'amplitude': {'value':100, 'vary':True, 'min':-np.inf, 'max':+np.inf},
     'center': {'value':2.5, 'min':0, 'max':10},
@@ -117,12 +107,10 @@ init_line = {
     'intercept': {'value':0, },
 }
 
-
+# %% [markdown]
 # old fashion way of building items, using `utils.builders.build_items()`
 
-# In[4]:
-
-
+# %%
 xy = np.column_stack([x, y])
 
 items = build_items(
@@ -153,12 +141,10 @@ plt.plot(x, lg.best_fit, '-', label='best fit')
 plt.legend()
 plt.show()
 
-
+# %% [markdown]
 # or simply with `GlobalFitBuilder()` class
 
-# In[5]:
-
-
+# %%
 del lg
 
 builder = (
@@ -183,10 +169,3 @@ plt.plot(x, lg.init_fit, '--', label='initial fit')
 plt.plot(x, lg.best_fit, '-', label='best fit')
 plt.legend()
 plt.show()
-
-
-# In[ ]:
-
-
-
-

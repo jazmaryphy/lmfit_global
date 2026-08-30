@@ -16,7 +16,8 @@ import matplotlib.pyplot as plt
 from string import ascii_letters
 from typing import TYPE_CHECKING
 # import palettable.colorbrewer.diverging
-from ._decorators import ensureMatplotlib
+
+from lmfit_global.utils._decorators import ensureMatplotlib
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes

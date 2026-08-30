@@ -1,7 +1,9 @@
+# %%
 import numpy as np
-from ._typing import LmfitGlobalLike
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterable, List, Optional, Any
+
+from lmfit_global.utils._typing import LmfitGlobalLike
 
 # %%
 @dataclass(slots=True)

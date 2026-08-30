@@ -8,8 +8,8 @@ from typing import Callable, Dict, Iterable, List, Optional, Any
 
 # %%
 """import utilities codes"""
-from .utils import lmfit
-from .utils.api import (
+from lmfit_global.utils._deps import lmfit 
+from lmfit_global.utils.api import (
     FitData,
     ModelSpec,
     FitPlotter,
@@ -17,9 +17,9 @@ from .utils.api import (
     parse_xrange,
     get_default_logger,
 )
-from .utils import io_utils as uio
-from .utils import reporting as urep
-from .utils import parameters as upar
+from lmfit_global.utils import io_utils as uio
+from lmfit_global.utils import reporting as urep
+from lmfit_global.utils import parameters as upar
 
 # valid connectors to compose multi-comp
 _VALID_CONNECTORS = {

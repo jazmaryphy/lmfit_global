@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-# coding: utf-8
-
+# %% [markdown]
 # # Model - Gaussian
 # 
 # This example shows how to use `lmfit_global.simplefit` code to fit data with simple gaussian. 
@@ -8,9 +6,7 @@
 # This example is similar to `model_gaussian.py` of [lmfit examples](https://lmfit.github.io/lmfit-py/examples/index.html) or [github link](https://github.com/lmfit/lmfit-py/tree/master/examples)
 # 
 
-# In[1]:
-
-
+# %%
 try:
     from lmfit_global import simplefit
 except (ImportError, ModuleNotFoundError):
@@ -20,12 +16,8 @@ except (ImportError, ModuleNotFoundError):
     from lmfit_global import simplefit
 
 import matplotlib.pyplot as plt
-# sys.path
 
-
-# In[2]:
-
-
+# %%
 import os
 import numpy as np
 dpath = './data'  # data path
@@ -41,10 +33,7 @@ data = np.loadtxt(file)
 x = data[:, 0]  # first  columm as x
 y = data[:, 1]  # second column as y
 
-
-# In[3]:
-
-
+# %%
 from lmfit_global.utils import lineshapes
 
 p0 = [5.0, 5.0, 1.0]   # init params
@@ -93,4 +82,3 @@ plt.plot(x, y, 'o')
 plt.plot(x, yfit, '-', label='best fit')
 plt.legend()
 plt.show()
-

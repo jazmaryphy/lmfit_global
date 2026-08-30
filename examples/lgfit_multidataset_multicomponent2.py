@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-# coding: utf-8
-
+# %% [markdown]
 # # Global multi-dataset fit example
 # 
 # We consider $N=2$ datasets sharing a common Gaussian component
@@ -15,9 +13,7 @@
 # The parameters $\mu$ and $\sigma$ are shared across datasets,
 # while $A_d$, $m_d$, and $c_d$ vary per dataset.
 
-# In[1]:
-
-
+# %%
 try:
     from lmfit_global import LmfitGlobal
     from lmfit_global.utils.builders import GlobalFitBuilder
@@ -32,13 +28,11 @@ except (ImportError, ModuleNotFoundError):
 import numpy as np
 import matplotlib.pyplot as plt
 
-
+# %% [markdown]
 # ### (1) Generate synthetic multi-dataset, multi-component data
 
-# In[2]:
-
-
-rng = np.random.default_rng(12345)
+# %%
+rng = np.random.default_rng(4)
 
 # -------------------------
 # True shared parameters
@@ -95,14 +89,12 @@ plt.xlabel("x")
 plt.ylabel("y")
 plt.show()
 
-
+# %% [markdown]
 # ### (2) Merge datasets onto a shared x-grid
 # 
 # using `utils.io_utils.merge_xyerr_data`
 
-# In[3]:
-
-
+# %%
 from lmfit_global.utils.io_utils import merge_xyerr_data
 
 x, y, yerr = merge_xyerr_data(
@@ -114,11 +106,10 @@ x, y, yerr = merge_xyerr_data(
 print(x.shape, y.shape)
 
 
+# %% [markdown]
 # ### (3) Build `items` dictionary for `LmfitGlobal`
 
-# In[4]:
-
-
+# %%
 items_without_xy = {
     # "data": {
     #     "xy": np.column_stack([x, y]),
@@ -148,23 +139,19 @@ items_without_xy = {
 lg = LmfitGlobal(items_without_xy, log_level='info')
 lg.theory_expr # or lg.pretty_expr
 
-
+# %% [markdown]
 # ### (4) `items: WARNINGS` set data as `.set_data(x, y)`
 
-# In[5]:
-
-
+# %%
 lg.set_data(x, y)
 
-
+# %% [markdown]
 # ### (4)* `items: WARNINGS` 2 set nan policy `.set_nan_policy("omit")`
 
-# In[6]:
-
-
+# %%
 lg.set_nan_policy("omit")
 
-
+# %% [markdown]
 # ### (5) pretty print initial parameters
 # 
 # shared global parameters:
@@ -174,9 +161,7 @@ lg.set_nan_policy("omit")
 # c0_sigma_0 =  c0_sigma_1
 # ```
 
-# In[7]:
-
-
+# %%
 def link_global(lg, names):
     lg.set_global(names, overwrite_expr=True)
 
@@ -186,48 +171,36 @@ link_global(lg, [f"c0_sigma_{i}" for i in range(ny)])
 
 lg.init_params.pretty_print()
 
-
+# %% [markdown]
 # ### (6) fit, report and plot ...
 
-# In[8]:
-
-
+# %%
 lg.fit(nan_policy="omit")  # or use nan_policy="omit" in fit()
 result = lg.result # result Minimizer
 
-
-# In[9]:
-
-
+# %%
 lg.report()
 
-
-# In[10]:
-
-
+# %%
 pretty_kw={'width': 6, 'height':6, 'dpi':100} # width and height and dpi of figure, or None to use default settings
 
 # lg.plot()
 lg.plot(numpoints=1024, xlabel='x', ylabel='y', pretty_kw=pretty_kw)
 plt.show()
 
-
+# %% [markdown]
 # ### (7) Extract structured results with `FitData`
 
-# In[11]:
-
-
+# %%
 fitdata = lg.get_fitdata(numpoints=600)
 
 print("Number of Datasets:", fitdata.n_datasets)
 print("Components Names:", fitdata.component_names)
 
-
+# %% [markdown]
 # ### (8) Plot components per dataset (multi-panel)
 
-# In[12]:
-
-
+# %%
 n = fitdata.n_datasets
 fig, axes = plt.subplots(1, n, figsize=(5*n, 4), sharey=True)
 
@@ -270,39 +243,30 @@ plt.tight_layout()
 plt.show()
 
 
+# %% [markdown]
 # ### (9) (Optional) Uncertainty bands
 
-# In[13]:
-
-
+# %%
 lg.eval_uncertainty(sigma=3)
 
 dely = lg.dely
 dely_comps = lg.dely_comps
 
-
+# %% [markdown]
 # ### (10) (Optional) Exports
 
-# In[14]:
-
-
+# %%
 lg.export("params")
 ## OR WITH ###
 # lg.to_dataframe()
 
-
-# In[15]:
-
-
+# %%
 res_dict = lg.export("dict")
 ## OR WITH ###
 # res_dict = lg.to_dict()
 # res_dict
 
-
-# In[16]:
-
-
+# %%
 df = lg.export("data")  
 df = lg.export("data", fitdata_kws={"numpoints": 1024})
 ## OR WITH ###
@@ -310,23 +274,16 @@ df = lg.export("data", fitdata_kws={"numpoints": 1024})
 # df = lg.data_to_dataframe(fitdata_kws={"numpoints": 1024})
 df
 
-
-# In[17]:
-
-
+# %%
 res_json = lg.export("json", indent=2)
 ## OR WITH ###
 # res_json = lg.to_json()
 # res_json
 
-
-# In[18]:
-
-
+# %%
 x_data, x_fit, y_data, y_fit, resid = lg.export("numpy")
 x_data, x_fit, y_data, y_fit, resid = lg.export("numpy", fitdata_kws={"numpoints": 1024})
 ## OR WITH ###
 # x_data, x_fit, y_data, y_fit, resid = lg.to_numpy()
 # x_data, x_fit, y_data, y_fit, resid = lg.to_numpy(fitdata_kws={"numpoints": 1024})
 # resid
-

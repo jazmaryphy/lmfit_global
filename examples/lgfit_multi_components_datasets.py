@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-# coding: utf-8
-
+# %% [markdown]
 # # Fit Multiple Data Sets With Multiple Components
 # 
 # ### Bloembergen-Purcell-Pound (BPP) function
@@ -9,9 +7,7 @@
 # 
 # This is an example to results published in `[Figure 4 (a)]` [Phys. Rev. B 111, 014444 (2025)](https://journals.aps.org/prb/abstract/10.1103/PhysRevB.111.014444) 
 
-# In[1]:
-
-
+# %%
 try:
     from lmfit_global import LmfitGlobal
     from lmfit_global.utils.builders import GlobalFitBuilder
@@ -26,14 +22,12 @@ except (ImportError, ModuleNotFoundError):
 import matplotlib
 import matplotlib.pyplot as plt
 
-
+# %% [markdown]
 # # Define `LmfitGlobal` class `items` data
 # 
 # First, load raw data...
 
-# In[ ]:
-
-
+# %%
 import os
 import numpy as np
 dpath = './data'  # data path
@@ -99,12 +93,10 @@ ax.ticklabel_format(style='plain', axis='x')  # Disable scientific notation
 
 plt.show()
 
-
+# %% [markdown]
 # second, model function to fit data...
 
-# In[3]:
-
-
+# %%
 import numpy as np
 log2 = np.log(2)
 s2pi = np.sqrt(2*np.pi)
@@ -278,14 +270,12 @@ def rlbpp_powerlaw(x, amplitude=1.0, tau=1.0, exponent=1.0, delta=1.0, omega=1.0
     # amplitude * r * (arg1 - arg2) # units = [1/sec]  * [1/sec]  * [sec] = [1/sec]  
     return amplitude * r * (arg1 - arg2)
 
-
+# %% [markdown]
 # one relaxation mechanism: **Raman or Raman-like**
 # 
 # built `data` and `function` **`item`** `dict` for `LmfitGlobal`  and fit...
 
-# In[4]:
-
-
+# %%
 # --- We are interesting for 1500G and 3000G data only in this case
 x = data[:, 0]
 y_list = data[:, [3, 5]]
@@ -307,12 +297,10 @@ builder = (
 
 items = builder.build()
 
-
+# %% [markdown]
 # call `LmfitGlobal`, `.fit()`, `.report()` and plot...
 
-# In[5]:
-
-
+# %%
 lg = LmfitGlobal(items, log_level='info')
 lg.set_nan_policy("omit")
 lg.theory_expr # or lg.pretty_expr
@@ -321,7 +309,7 @@ lg.init_params.pretty_print()  # pretty print initial parameters
 
 # --- Update omega ωL = γμ BL for 1500 G and 3000 G data ---
 
-
+# %% [markdown]
 # First, we need to update (fixed) $\omega_L = \gamma_{\mu}B_L$ value where $\gamma_{\mu}=0.0135538817~\text{MHz/G}$ for each field $B_L=1500, ~\text{and}~3000 ~\text{G}$.
 # 
 # This can be achieved using `.update_params()`:
@@ -350,9 +338,7 @@ lg.init_params.pretty_print()  # pretty print initial parameters
 # *parlist: Union[str, list[str], lmfit.Parameter, lmfit.Parameters, Iterable, Dict]
 # ```
 
-# In[6]:
-
-
+# %%
 def link_global(lg, names):
     lg.set_global(names, overwrite_expr=True)
 
@@ -363,10 +349,7 @@ TWOPI = 2.0 * np.pi
 fields_G = np.array([1500, 3000], dtype=float)  # Gauss
 omegas = TWOPI * GAMMA_MU_HZ_PER_GAUSS * fields_G
 
-
-# In[7]:
-
-
+# %%
 ny, nc = 2, 1 # number of datasets and components
 
 parlist = {
@@ -387,10 +370,7 @@ link_global(lg, [f"tau_{i}" for i in range(ny)])
 
 lg.init_params.pretty_print()  # pretty print initial parameters 
 
-
-# In[ ]:
-
-
+# %%
 lg.fit(verbose=True)
 lg.report()
 # --- fancy plots ---
@@ -400,20 +380,15 @@ lg.plot_fit(plot_residual=True, numpoints=1024, xlabel='x', ylabel='y', pretty_k
 # lg.plot(plot_residual=True, show=True, numpoints=None, xlabel='x', ylabel='y', pretty_kw=pretty_kw)
 plt.show()
 
-
-# In[ ]:
-
+# %%
 
 
-
-
+# %% [markdown]
 # two relaxation process: **Raman or Raman-like** and **Orbach**
 # 
 # built `data` and `function` **`item`** `dict` for `LmfitGlobal`  and fit...
 
-# In[9]:
-
-
+# %%
 # --- We are interesting for 1500G and 3000G data only in this case
 x = data[:, 0]
 y_list = data[:, [3, 5]]
@@ -443,12 +418,10 @@ builder = (
 
 items = builder.build()
 
-
+# %% [markdown]
 # call `LmfitGlobal`, `.fit()`, `.report()` and plot...
 
-# In[10]:
-
-
+# %%
 lg = LmfitGlobal(items, log_level='info')
 lg.set_nan_policy("omit")
 lg.theory_expr # or lg.pretty_expr
@@ -457,10 +430,7 @@ lg.init_params.pretty_print()  # pretty print initial parameters
 
 # --- Update omega ωL = γμ BL for 1500 G and 3000 G data ---
 
-
-# In[11]:
-
-
+# %%
 ny, nc = 2, 2 # number of datasets and components
 
 parlist = {
@@ -499,10 +469,7 @@ for fn in GLOBAL_BY_NAME.values():
 
 lg.init_params.pretty_print()  # pretty print initial parameters 
 
-
-# In[ ]:
-
-
+# %%
 lg.fit(verbose=True)
 lg.report()
 # --- fancy plots ---
@@ -512,20 +479,15 @@ lg.plot_fit(plot_residual=True, numpoints=1024, xlabel='x', ylabel='y', pretty_k
 # lg.plot(plot_residual=True, show=True, numpoints=None, xlabel='x', ylabel='y', pretty_kw=pretty_kw)
 plt.show()
 
-
-# In[ ]:
-
+# %%
 
 
-
-
+# %% [markdown]
 # three relaxation process: **Raman or Raman-like** and **Orbach** and **Direct**
 # 
 # built `data` and `function` **`item`** `dict` for `LmfitGlobal`  and fit...
 
-# In[13]:
-
-
+# %%
 # --- We are interesting for 1500G and 3000G data only in this case
 x = data[:, 0]
 y_list = data[:, [3, 5]]
@@ -563,12 +525,10 @@ builder = (
 
 items = builder.build()
 
-
+# %% [markdown]
 # call `LmfitGlobal`, `.fit()`, `.report()` and plot...
 
-# In[14]:
-
-
+# %%
 lg = LmfitGlobal(items, log_level='info')
 lg.set_nan_policy("omit")
 lg.theory_expr # or lg.pretty_expr
@@ -577,10 +537,7 @@ lg.init_params.pretty_print()  # pretty print initial parameters
 
 # --- Update omega ωL = γμ BL for 1500 G and 3000 G data ---
 
-
-# In[15]:
-
-
+# %%
 ny, nc = 2, 3 # number of datasets and components
 
 parlist = {
@@ -620,10 +577,7 @@ for fn in GLOBAL_BY_NAME.values():
 
 lg.init_params.pretty_print()  # pretty print initial parameters 
 
-
-# In[ ]:
-
-
+# %%
 lg.fit(verbose=True)
 lg.report()
 # --- fancy plots ---
@@ -632,14 +586,12 @@ lg.plot_fit(plot_residual=True, numpoints=1024, xlabel='x', ylabel='y', pretty_k
 # --- OR ---
 # lg.plot(plot_residual=True, show=True, numpoints=None, xlabel='x', ylabel='y', pretty_kw=pretty_kw)
 
-
+# %% [markdown]
 # FitData object: (includes components)
 # 
 # plotting and handling...
 
-# In[17]:
-
-
+# %%
 def _data_label(i: int, is_multidataset: bool) -> str | None:
     if is_multidataset:
         return f"data {i+1}"
@@ -728,10 +680,7 @@ ax.legend(
 )
 plt.show()
 
-
-# In[18]:
-
-
+# %%
 def _data_label(i: int, is_multidataset: bool) -> str | None:
     if is_multidataset:
         return f"data {i+1}"
@@ -848,7 +797,7 @@ ax.legend(
 )
 plt.show()
 
-
+# %% [markdown]
 # ### **NOTE 1**
 # 
 # The BPP‑like behavior is reasonably well reproduced, in particular with a good scaling of the peak position and its intensity, which diminishes as $\sim 1/B_L$, as predicted by the BPP law.  
