@@ -18,9 +18,11 @@ htmlcov/
 
 # Un-ignore specific folders so Git can read their contents
 !examples/
+!examples/**/
 !examples/*.ipynb
 !examples/**/*.ipynb
 
+# same as above
 #!notebooks/
 #!notebooks/*.ipynb
 #!notebooks/**/*.ipynb
