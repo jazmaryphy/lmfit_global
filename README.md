@@ -37,6 +37,7 @@ It is designed for cases where:
 - [**matplotlib**](https://matplotlib.org/) — enables plotting and visualization  
 > To run the test suite, the [**pytest**](https://docs.pytest.org/en/stable/) package is required.
 
+
 ## Code structure and utilities
 ```bash
 lmfit_global/
@@ -54,55 +55,6 @@ lmfit_global/
 ├── examples/               # Usage examples and tutorials
 ```
 
-<!--
-```
-lmfit_global/
-│
-├── lmfit_global/                
-│   ├── __init__.py
-│   │
-│   ├── utils/                   
-│   │   ├── __init__.py
-│   │   ├── fitdata.py
-│   │   ├── builders.py
-│   │   ├── .
-│   │   ├── .
-│   │   ├── .
-│   │   └── lineshapes.py
-│   │
-│   ├── core.py               # Core LmfitGlobal implementation     
-│   ├── simplefit.py          # Analogous to scipy.optimize implementation  
-│
-├── tests/                    # Test Suite           
-├── examples/                 # example folder    
-```
--->
-
-<!--
-```
-lmfit_global/
-│
-├── lmfit_global/                
-│   ├── __init__.py
-│   │
-│   ├── utils/                   
-│   │   ├── __init__.py
-│   │   ├── fitdata.py
-│   │   ├── builders.py
-│   │   ├── io_utils.py
-│   │   ├── plotting.py
-│   │   ├── modelspec.py
-│   │   ├── reporting.py
-│   │   ├── parameters.py
-│   │   └── lineshapes.py
-│   │
-│   ├── core.py               # Core LmfitGlobal implementation     
-│   ├── simplefit.py          # Analogous to scipy.optimize implementation  
-│
-├── tests/                    # Test Suite           
-├── examples/                 # example folder             
-```
--->
 
 ## Installation
 Clone the repository and install in editable mode:
@@ -128,4 +80,4 @@ MIT — Created by [Muhammad Maikudi ISAH](https://jazmaryphy.github.io/)
 
 - **Website:** [jazmaryphy.github.io](https://jazmaryphy.github.io/)
 - **LinkedIn:** [linkedin.com/in/iammisah](https://www.linkedin.com/in/iammisah)
-- **X (Twitter):** [@heyitsmisah](https://x.com/heyitsmisah)
+- **X (Formally Twitter):** [@heyitsmisah](https://x.com/heyitsmisah)
