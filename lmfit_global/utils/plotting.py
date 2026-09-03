@@ -724,6 +724,7 @@ _PLOT_RULES = {
     "resid": {"fmt": "o", "overlay_data": False,"zorder": 2,},
 }
 
+
 class FitPlotter:
     """
     Handles all plotting for FitData objects:
@@ -732,7 +733,7 @@ class FitPlotter:
     - data/init/fit/residual layers
     - subplot layout
     """
-
+ 
     def __init__(self, fitdata, colors=None, palette="tab10"):
         self.fitdata = fitdata
         self.rules = _PLOT_RULES
@@ -740,7 +741,7 @@ class FitPlotter:
         # Computed ONCE and reused for every layer (data/fit/init/resid) so
         # dataset i's marker and its own fit line always share one color.
         self.colors = colors if colors is not None else get_dataset_colors(ny, palette)
-
+ 
     # ------------------------------------------------------------
     # Figure / axes creation
     # ------------------------------------------------------------
@@ -761,9 +762,9 @@ class FitPlotter:
                 nrows=1, ncols=1, pretty_kw=pretty_kw,
             )
             ax_res = None
-
+ 
         return ax_main, ax_res, fig
-
+ 
     # ------------------------------------------------------------
     # Core plotting logic
     # ------------------------------------------------------------
@@ -775,6 +776,7 @@ class FitPlotter:
         self, 
         plotwhat, 
         ax=None, 
+        ax_res=None,
         yerr=None,
         xlabel=None, 
         ylabel=None, 
@@ -788,18 +790,18 @@ class FitPlotter:
         resid_kws=None,
         pretty_kw=None
     ):
-
+ 
         data_kws  = data_kws  or {}
         init_kws  = init_kws  or {}
         fit_kws   = fit_kws   or {}
         resid_kws = resid_kws or {}
-
+ 
         if plotwhat not in self.rules:
             raise ValueError(f"Invalid plotwhat '{plotwhat}'")
-
+ 
         fitdata = self.fitdata
         rules = self.rules[plotwhat]
-
+ 
         # Axes creation
         if ax is None:
             ax_main, ax_res, fig = self.make_axes(
@@ -807,8 +809,12 @@ class FitPlotter:
             )
         else:
             ax_main = ax
-            ax_res = None
-
+            # If the caller already built a linked residual axis (e.g. via
+            # make_axes()) and passed it in explicitly, use it -- previously
+            # this branch always forced ax_res=None, silently discarding any
+            # residual axis the caller had already created and leaving the
+            # residual panel blank even when plot_residual=True.
+ 
         # Overlay data if needed
         if rules["overlay_data"]:
             plot_from_fitdata(
@@ -819,7 +825,7 @@ class FitPlotter:
                 plot_kws=data_kws,
                 colors=self.colors,
             )
-
+ 
         # Main layer
         plot_from_fitdata(
             fitdata, ax=ax_main, plotwhat=plotwhat,
@@ -831,7 +837,7 @@ class FitPlotter:
                       "resid": resid_kws}[plotwhat],
             colors=self.colors,
         )
-
+ 
         # Residuals
         if plot_residual and plotwhat != "resid" and ax_res is not None:
             plot_from_fitdata(
@@ -842,28 +848,28 @@ class FitPlotter:
                 colors=self.colors,
             )
             ax_res.axhline(0, color="k", lw=1)
-
+ 
         # Labels
         if xlabel:
             ax_main.set_xlabel(xlabel)
         if ylabel:
             ax_main.set_ylabel(ylabel)
-
+ 
         if xlim:
             ax_main.set_xlim(xlim)
         if ylim:
             ax_main.set_ylim(ylim)
-
+ 
         ax_main.legend()
         if ax_res:
             ax_res.legend()
             ax_res.set_ylabel('resid.')
             if xlim:
                 ax_res.set_xlim(xlim)
-
+ 
         plt.tight_layout() 
-
+ 
         if show:
             plt.show()
-
+ 
         return ax_main
