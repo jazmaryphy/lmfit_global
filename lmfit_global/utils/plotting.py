@@ -566,6 +566,35 @@ def add_fig_kwargs(func):
     return wrapper
 
 # %%
+def get_dataset_colors(ny: int, palette: str = "tab10") -> list:
+    """Return `ny` visually distinct, stable colors -- one per dataset.
+
+    The same list should be reused across every layer (data, fit, init,
+    residual, components) of a given figure so that dataset *i*'s raw
+    points, fit line, and component curves all share one color. This is
+    what keeps a multi-dataset plot minimalist: color encodes *which
+    dataset*, while marker/linestyle encodes *which layer* (data vs fit
+    vs component), instead of every ax.plot() call silently consuming
+    the next color in matplotlib's shared prop-cycle.
+
+    Args:
+        ny (int): number of datasets.
+        palette (str): a matplotlib colormap name. Defaults to "tab10",
+            which has 10 well-separated qualitative colors.
+
+    Returns:
+        list: length-`ny` list of colors (cycled if ny > palette size).
+    """
+    cmap = plt.get_cmap(palette)
+    base = list(cmap.colors) if hasattr(cmap, "colors") else [
+        cmap(t) for t in np.linspace(0, 1, max(ny, 2))
+    ]
+    if ny <= len(base):
+        return base[:ny]
+    reps = int(np.ceil(ny / len(base)))
+    return (base * reps)[:ny]
+
+
 @ensureMatplotlib
 def plot_from_fitdata(
     fitdata,
@@ -577,6 +606,7 @@ def plot_from_fitdata(
     parse_complex="abs",
     zorder=1,
     plot_kws=None,
+    colors=None,
 ):
     """
     Generic plotting helper using FitData.
@@ -592,6 +622,12 @@ def plot_from_fitdata(
         parse_complex (str)
         zorder (int)
         plot_kws (dict, optional)
+        colors (list, optional): one color per dataset (see
+            `get_dataset_colors`). When given, dataset *i* is drawn in
+            `colors[i]` unless `plot_kws` already specifies an explicit
+            "color" (which always wins). This is what ties a dataset's
+            "data" and "fit" layers to the same color across separate
+            `plot_from_fitdata` calls.
     """
     if plot_kws is None:
         plot_kws = {}
@@ -657,6 +693,13 @@ def plot_from_fitdata(
 
         lbl = f"{label}{i}" if ny > 1 else label
 
+        # copy so we don't mutate the caller's dict across iterations, and
+        # so an explicit color in plot_kws always overrides the per-dataset
+        # default (colors is a fallback, not a forced override)
+        kws = dict(plot_kws) if plot_kws else {}
+        if colors is not None and "color" not in kws:
+            kws["color"] = colors[i % len(colors)]
+
         if yerr is not None and plotwhat in ("data", "resid"):
             err_i = yerr[:, i] if ny > 1 else yerr
             err_i = propagate_err(yi_raw, err_i, parse_complex)
@@ -664,13 +707,13 @@ def plot_from_fitdata(
             ax.errorbar(
                 x, yi, yerr=err_i,
                 fmt=fmt, label=lbl,
-                zorder=zorder, **plot_kws
+                zorder=zorder, **kws
             )
         else:
             ax.plot(
                 x, yi, fmt,
                 label=lbl, zorder=zorder,
-                **plot_kws
+                **kws
             )
 
 # %%
@@ -690,9 +733,13 @@ class FitPlotter:
     - subplot layout
     """
 
-    def __init__(self, fitdata):
+    def __init__(self, fitdata, colors=None, palette="tab10"):
         self.fitdata = fitdata
         self.rules = _PLOT_RULES
+        ny = fitdata.y_data.shape[1] if getattr(fitdata.y_data, "ndim", 1) > 1 else 1
+        # Computed ONCE and reused for every layer (data/fit/init/resid) so
+        # dataset i's marker and its own fit line always share one color.
+        self.colors = colors if colors is not None else get_dataset_colors(ny, palette)
 
     # ------------------------------------------------------------
     # Figure / axes creation
@@ -770,6 +817,7 @@ class FitPlotter:
                 label="data", yerr=yerr,
                 zorder=self.rules["data"]["zorder"],
                 plot_kws=data_kws,
+                colors=self.colors,
             )
 
         # Main layer
@@ -781,6 +829,7 @@ class FitPlotter:
                       "init": init_kws,
                       "fit": fit_kws,
                       "resid": resid_kws}[plotwhat],
+            colors=self.colors,
         )
 
         # Residuals
@@ -790,6 +839,7 @@ class FitPlotter:
                 fmt=self.rules["resid"]["fmt"],
                 label="resid", yerr=yerr,
                 plot_kws=resid_kws,
+                colors=self.colors,
             )
             ax_res.axhline(0, color="k", lw=1)
 
