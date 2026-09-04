@@ -45,6 +45,7 @@ dist/
 
 
 # Project archives and legacy code
+#gui/
 archive/
 old/
 scratch/

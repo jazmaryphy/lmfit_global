@@ -9,7 +9,7 @@ description = "Global fitting of multi-component, multi-dataset models built on 
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-keywords = []
+keywords = ["fitting", "lmfit", "spectroscopy", "streamlit"]
 authors = [
     { name = "Muhammad Maikudi Isah", email = "muhammadmaikudi.isah@gmail.com" }
 ]
@@ -21,10 +21,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-uncertainty = ["scipy"]
 plot = ["matplotlib", "palettable"]
 ml = ["scikit-learn"]
+gui = ["streamlit>=1.30.0", "matplotlib", "pandas"]
+
+[project.scripts]
+lmfitgedit = "gui.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["lmfit_global*"]
+include = ["lmfit_global", "lmfit_global.*", "gui", "gui.*"]
+
+[tool.setuptools.package-data]
+"gui" = ["**/*"]

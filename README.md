@@ -36,6 +36,7 @@ It is designed for cases where:
 - [**scikit-learn**](https://scikit-learn.org/) — provides additional statistical and analysis utilities  
 - [**matplotlib**](https://matplotlib.org/) — enables plotting and visualization  
 > To run the test suite, the [**pytest**](https://docs.pytest.org/en/stable/) package is required.
+> To run the GUI, the [**streamlit**](https://streamlit.io/) package is required.
 
 
 ## Code structure and utilities
@@ -53,6 +54,8 @@ lmfit_global/
 │
 ├── tests/                  # Test suite
 ├── examples/               # Usage examples and tutorials
+│
+├── gui/                    # <-- GUI Application Package with Streamlit (EXPERIMENTAL!!!)
 ```
 
 
