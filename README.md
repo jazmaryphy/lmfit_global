@@ -36,7 +36,7 @@ It is designed for cases where:
 - [**scikit-learn**](https://scikit-learn.org/) — provides additional statistical and analysis utilities  
 - [**matplotlib**](https://matplotlib.org/) — enables plotting and visualization  
 > To run the test suite, the [**pytest**](https://docs.pytest.org/en/stable/) package is required.
-> To run the GUI, the [**streamlit**](https://streamlit.io/) package is required.
+> And for GUI (`lmfitgedit`), the [**streamlit**](https://streamlit.io/) package is required.
 
 
 ## Code structure and utilities
