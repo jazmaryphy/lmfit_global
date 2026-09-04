@@ -782,9 +782,9 @@ class FitPlotter:
         ylabel=None, 
         xlim=None,
         ylim=None,
-        plot_residual=True,
+        plot_residual=False,
         show_legend=True,
-        show_resid_legend=True,
+        show_resid_legend=False,
         show=True,
         data_kws=None, 
         init_kws=None, 
@@ -863,7 +863,8 @@ class FitPlotter:
             ax_main.set_ylim(ylim)
  
         if show_legend:
-            ax_main.legend()
+            # ax_main.legend()
+            ax_main.legend(loc="best", frameon=True, edgecolor="black")
             
         if ax_res:
             if show_resid_legend:
