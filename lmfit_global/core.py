@@ -1538,10 +1538,12 @@ class LmfitGlobal:
         # --- Resolve arguments with fallbacks ---
         logger = logger or self.logger
         fit_method = fit_method or self.fit_method
-        fit_kws = fit_kws or self.fit_kws
+        fit_kws = (fit_kws or self.fit_kws).copy()  # Make a copy to avoid mutating self.fit_kws
         # iter_cb = iter_cb or self._iteration
         nan_policy = nan_policy or self.nan_policy
 
+        # Remove 'method' from fit_kws if present to avoid keyword collision
+        fit_kws.pop('method', None)
 
         # --- Progress message (start) ---
         # if verbose:

@@ -63,3 +63,5 @@ lmfit_global/utils/[0-9]*-*.py
 lmfit_global/*_v*.py
 lmfit_global/utils/*_v*.py
 
+gui/app_v2.py
+#gui/src/*_v*.py

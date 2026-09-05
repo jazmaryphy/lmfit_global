@@ -4,11 +4,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import streamlit as st
+
 from gui.library import FUNCTION_LIBRARY
 from gui.src.utils import render_fancy_header
 
 # %%
-def render_parameter_editor(xy: np.ndarray, component_choices: list[str]) -> pd.DataFrame:
+def render_parameter(xy: np.ndarray, component_choices: list[str]) -> pd.DataFrame:
     """Builds interactive tabbed data-editors for model bounds/initial parameters."""
     # st.header("4. Initial Parameter Editor & Bounds")
     # st.caption("Edit value / bounds / vary flag for each component's parameters.")
