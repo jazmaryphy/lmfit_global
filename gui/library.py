@@ -71,7 +71,10 @@ PARAM_OVERRIDES = {
 }
 
 # Functions or helpers in lineshapes.py to exclude from the UI
-EXCLUDED_FUNCTIONS = {"not_zero", "napro_sum_gaussian"}
+EXCLUDED_FUNCTIONS = {
+    "not_zero", 
+    "napro_sum_gaussian",
+}
 
 
 # ----------------------------------------------------------------------

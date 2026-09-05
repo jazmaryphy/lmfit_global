@@ -24,21 +24,45 @@ It is designed for cases where:
 > This project is currently in an **experimental stage**...  
 > Internal behavior may change.
 
+---
+
+
 ## Dependencies
 
-### Required
+### Core Requirements
 - [**lmfit**](https://lmfit.github.io/lmfit-py/installation.html)
 - [**numpy**](https://numpy.org/)
 - [**scipy**](https://scipy.org/)
 
-### Optional
-- [**scipy**](https://scipy.org/) — used for evaluating uncertainty bands  
-- [**scikit-learn**](https://scikit-learn.org/) — provides additional statistical and analysis utilities  
-- [**matplotlib**](https://matplotlib.org/) — enables plotting and visualization  
-> To run the test suite, the [**pytest**](https://docs.pytest.org/en/stable/) package is required.
-> And for GUI (`lmfitgedit`), the [**streamlit**](https://streamlit.io/) package is required.
+### Optional Extras
+Optional functionality can be enabled via `pip` install tags:
+- **`.[gui]`** — Installs [**streamlit**](https://streamlit.io/), [**pandas**](https://pandas.pydata.org/), and [**matplotlib**](https://matplotlib.org/) to run the `lmfitgedit` web interface.
+- **`.[plot]`** — Installs [**matplotlib**](https://matplotlib.org/) and [**palettable**](https://jiffyclub.github.io/palettable/) for advanced visualizations.
+- **`.[ml]`** — Installs [**scikit-learn**](https://scikit-learn.org/) for additional statistical utilities.
+
+---
 
 
+## Code Structure
+```bash
+lmfit_global/
+│
+├── lmfit_global/           # Core Python Library
+│   ├── core.py             # Core global fitting engine
+│   ├── simplefit.py        # Lightweight SciPy-like fitting interface
+│   └── utils/              # Internal utilities (I/O, plotting, builders)
+│
+├── gui/                    # Streamlit Web Application (lmfitgedit), EXPERIMENTAL!!!
+│   ├── app.py              # Main Streamlit UI layout
+│   ├── cli.py              # CLI launcher entry point
+│   └── src/                # UI components and session handlers
+│
+├── tests/                  # Test suite
+└── examples/               # Code usage examples and tutorials
+```
+
+
+<!--
 ## Code structure and utilities
 ```bash
 lmfit_global/
@@ -58,18 +82,38 @@ lmfit_global/
 ├── gui/                    # <-- GUI Application Package with Streamlit (EXPERIMENTAL!!!)
 ```
 
+---
+-->
+
 
 ## Installation
 Clone the repository and install in editable mode:
 
 ```bash
-git clone https://github.com/jazmaryphy/lmfit_global.git
+git clone [https://github.com/jazmaryphy/lmfit_global.git](https://github.com/jazmaryphy/lmfit_global.git)
 cd lmfit_global/
 pip install -e .
 ```
+
+To include the GUI interface during installation, use the `[gui]` extra:
+
+```bash
+pip install -e .[gui]
+```
+
+## GUI (`lmfitgedit`)
+`lmfit-global` includes an interactive, browser-based editor and visualizer called `lmfitgedit`.
+
+Once installed with the `[gui]` extra, launch the interactive application directly from any terminal window:
+
+
+```bash
+lmfitgedit
+```
+
 ## Example
 
-Many template examples in examples folder by:
+Explore multi-dataset templates and tutorials in the `examples/` directory:
 
 ```bash
 cd examples/
@@ -79,7 +123,7 @@ cd examples/
 
 MIT — Created by [Muhammad Maikudi ISAH](https://jazmaryphy.github.io/)
 
-### 📬 Contact & Links
+### Contact & Links
 
 - **Website:** [jazmaryphy.github.io](https://jazmaryphy.github.io/)
 - **LinkedIn:** [linkedin.com/in/iammisah](https://www.linkedin.com/in/iammisah)
