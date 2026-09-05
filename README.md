@@ -90,7 +90,7 @@ lmfit_global/
 Clone the repository and install in editable mode:
 
 ```bash
- git clone https://github.com/jazmaryphy/lmfit_global.git 
+git clone https://github.com/jazmaryphy/lmfit_global.git 
 cd lmfit_global/
 pip install -e .
 ```
