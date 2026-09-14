@@ -86,11 +86,43 @@ render_fancy_header(
     title="Optimization & Results",
     step_number=6,
     level=2,
-    title_color="#38bdf8"  # Universal Electric Blue
+    title_color="#38bdf8"
+)
+
+st.markdown(
+    """
+    <style>
+    /* Target the primary button container */
+    div.stButton > button[kind="primary"] {
+        background-color: #ff4b4b !important; /* Optional: Customize red button color */
+        padding: 18px 28px !important;
+        min-height: 65px !important;
+        border: none !important;
+        border-radius: 10px !important;
+        width: 100% !important;
+    }
+
+    /* Target the text and emoji inside the button */
+    div.stButton > button[kind="primary"] p,
+    div.stButton > button[kind="primary"] span {
+        font-size: 26px !important;
+        font-weight: 800 !important;
+        color: #ffffff !important;           /* High contrast white text */
+        text-shadow: 0px 1px 2px rgba(0, 0, 0, 0.4); /* Optional: Adds subtle pop against bright background */
+        line-height: 1.2 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
 runfit_str = "🚀 Run Fit Optimization"
-if st.button(runfit_str, type="primary", use_container_width=True):
+
+if st.button(
+    runfit_str,
+    type="primary",
+    use_container_width=True,
+):
     with st.spinner("⚡ Running fit, please wait..."):
         try:
             lg, report_text = run_global_fit(
@@ -106,9 +138,12 @@ if st.button(runfit_str, type="primary", use_container_width=True):
                 fit_method_choice=fit_method_choice,
                 log_level_choice=log_level_choice,
             )
+
             st.session_state["fitted_lg"] = lg
             st.session_state["report_text"] = report_text
+
             st.success("Optimization completed successfully.")
+
         except Exception as e:
             st.error(f"Fit failed: {e}")
 
