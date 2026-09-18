@@ -6,7 +6,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import streamlit as st
 
-from gui.library import FUNCTION_LIBRARY
+# from gui.src.library import FUNCTION_LIBRARY # REMOVE:
 from gui.src.utils import render_fancy_header
 from gui.src.fit_runner import build_initial_model, run_global_fit
 
@@ -14,7 +14,7 @@ from gui.src.fit_runner import build_initial_model, run_global_fit
 def render_fit_execution(
     xy, param_df, component_choices, connectors, global_param_selections,
     ny, n_components, nan_policy_choice, fit_method_choice, log_level_choice,
-    x_min_fit, x_max_fit, n_points_eval,
+    x_min_fit, x_max_fit, n_points_eval, function_library,
 ):
     """Renders the 'Fit & Results' section: a Preview button (shows the
     current initial guess against the data without fitting) and the Run
@@ -121,7 +121,7 @@ def render_fit_execution(
                         global_param_selections=global_param_selections,
                         ny=ny,
                         n_components=n_components,
-                        function_library=FUNCTION_LIBRARY,
+                        function_library=function_library,
                         nan_policy_choice=nan_policy_choice,
                         x_min_fit=x_min_fit,
                         x_max_fit=x_max_fit,
@@ -147,7 +147,7 @@ def render_fit_execution(
                             global_param_selections=global_param_selections,
                             ny=ny,
                             n_components=n_components,
-                            function_library=FUNCTION_LIBRARY,
+                            function_library=function_library,
                             nan_policy_choice=nan_policy_choice,
                             fit_method_choice=fit_method_choice,
                             log_level_choice=log_level_choice,

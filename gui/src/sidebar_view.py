@@ -7,10 +7,15 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from gui.demo_data import DEMO_DATASETS, make_demo_data
-from gui.library import FUNCTION_LIBRARY, CONNECTORS, _CONNECTOR_LABELS
-
+from gui.src.demo_data import DEMO_DATASETS, make_demo_data
+from gui.src.library import FUNCTION_LIBRARY, CONNECTORS, _CONNECTOR_LABELS
 from gui.src.utils import render_fancy_header, render_thin_divider, sanitize_label
+from gui.src.custom_functions import (
+    make_library_entry, 
+    extract_parameter_names, 
+    validate_custom_function,
+    available_special_functions,
+)
 
 # %%
 def render_data() -> tuple[np.ndarray | None, list[str], list[str], str]:
@@ -168,6 +173,12 @@ def render_model(xy: np.ndarray):
         st.session_state["grid_to"] = x_data_max
         st.session_state["_grid_data_sig"] = grid_data_sig
 
+    if "custom_functions" not in st.session_state:
+        st.session_state.custom_functions = {}
+    # Built up front so the component pickers below always see the
+    # latest custom functions, including ones just added this rerun.
+    combined_library = {**FUNCTION_LIBRARY, **st.session_state.custom_functions}
+
     with st.sidebar:
         render_fancy_header(title="Fit Model", step_number=2, level=2, title_color="#38bdf8")
 
@@ -211,7 +222,7 @@ def render_model(xy: np.ndarray):
                 if i == 0:
                     col_fn, col_add = st.columns([5, 1])
                     fname = col_fn.selectbox(
-                        "Model", list(FUNCTION_LIBRARY.keys()), index=None,
+                        "Model", list(combined_library.keys()), index=None,
                         key=f"func_{rid}", label_visibility="collapsed",
                         placeholder="Select model…",
                     )
@@ -234,7 +245,7 @@ def render_model(xy: np.ndarray):
                         help="How this component combines with the one above it",
                     )
                     fname = col_fn.selectbox(
-                        "Model", list(FUNCTION_LIBRARY.keys()), index=None,
+                        "Model", list(combined_library.keys()), index=None,
                         key=f"func_{rid}", label_visibility="collapsed",
                         placeholder="Select model…",
                     )
@@ -251,6 +262,52 @@ def render_model(xy: np.ndarray):
                     component_choices.append(fname)
 
             n_components = len(st.session_state.component_rows)
+
+            # Custom function definition 
+            with st.expander("➕ Define custom function", expanded=False):
+                st.caption(
+                    "Write a formula using `x` as the independent variable and "
+                    "any other names as fittable parameters, e.g.\n\n"
+                    "`amplitude * exp(-(x-center)**2/(2*sigma**2)) + slope*x`\n\n"
+                    f"Also available: `{', '.join(available_special_functions())}`."
+                )
+                custom_name = st.text_input("Function name", key="custom_name_input")
+                custom_expr = st.text_area(
+                    "Formula",
+                    placeholder="amplitude * exp(-(x-center)**2/(2*sigma**2)) + slope*x + intercept",
+                    height=80, key="custom_expr_input",
+                )
+
+                if st.button("Validate & Add", key="add_custom_func"):
+                    name = custom_name.strip()
+                    expr = custom_expr.strip()
+                    if not name or not expr:
+                        st.error("Both a name and a formula are required.")
+                    elif name in FUNCTION_LIBRARY:
+                        st.error(f"'{name}' collides with a built-in function name — choose a different name.")
+                    else:
+                        param_names = extract_parameter_names(expr)
+                        if not param_names:
+                            st.error("No fittable parameters detected in the formula.")
+                        else:
+                            error = validate_custom_function(expr, param_names)
+                            if error:
+                                st.error(f"Formula error: {error}")
+                            else:
+                                st.session_state.custom_functions[name] = make_library_entry(expr, param_names)
+                                st.success(f"Added '{name}' — parameters: {', '.join(param_names)}")
+                                st.rerun()  # refresh so the new entry appears in the pickers immediately
+
+                if st.session_state.custom_functions:
+                    st.caption("Your custom functions: " + ", ".join(st.session_state.custom_functions.keys()))
+                    remove_choice = st.selectbox(
+                        "Remove a custom function",
+                        [""] + list(st.session_state.custom_functions.keys()),
+                        label_visibility="collapsed", key="remove_custom_choice",
+                    )
+                    if remove_choice and st.button(f"🗑️ Remove '{remove_choice}'", key="remove_custom_btn"):
+                        st.session_state.custom_functions.pop(remove_choice, None)
+                        st.rerun()
 
             # Fit range: sub-setting of Fit Model, no badge
             render_thin_divider()
@@ -338,4 +395,5 @@ def render_model(xy: np.ndarray):
         x_min_fit, x_max_fit,
         x_min_eval, x_max_eval, n_points_eval,
         nan_policy_choice, fit_method_choice, log_level_choice,
+        combined_library,
     )

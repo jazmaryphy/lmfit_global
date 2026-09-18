@@ -45,6 +45,7 @@ ny = xy.shape[1] - 1
     x_min_fit, x_max_fit,
     x_min_eval, x_max_eval, n_points_eval,
     nan_policy_choice, fit_method_choice, log_level_choice,
+    combined_library,
 ) = render_model(xy)
 
 if not all_selected:
@@ -62,7 +63,7 @@ invalidate_stale_fit_state(data_sig, model_sig)
 ### MAIN VIEW
 # PARAMETERS: view and edit parameters
 #
-param_df = render_parameter(xy, component_choices)
+param_df = render_parameter(xy, component_choices, combined_library)
 
 # %%
 ### MAIN VIEW
@@ -77,19 +78,20 @@ if ny > 1:
 # FIT EXECUTION
 #
 render_fit_execution(
-    xy=xy,
-    param_df=param_df,
+    xy=xy, 
+    param_df=param_df, 
     component_choices=component_choices,
-    connectors=connectors,
+    connectors=connectors, 
     global_param_selections=global_param_selections,
-    ny=ny,
+    ny=ny, 
     n_components=n_components,
-    nan_policy_choice=nan_policy_choice,
+    nan_policy_choice=nan_policy_choice, 
     fit_method_choice=fit_method_choice,
-    log_level_choice=log_level_choice,
-    x_min_fit=x_min_fit,
+    log_level_choice=log_level_choice, 
+    x_min_fit=x_min_fit, 
     x_max_fit=x_max_fit,
-    n_points_eval=n_points_eval,
+    n_points_eval=n_points_eval, 
+    function_library=combined_library,
 )
 
 # %%

@@ -5,13 +5,14 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from gui.library import FUNCTION_LIBRARY
+# from gui.src.library import FUNCTION_LIBRARY # REMOVE:
 from gui.src.utils import render_fancy_header
 
 # %%
 def render_parameter(
     xy: np.ndarray, 
-    component_choices: list[str]
+    component_choices: list[str],
+    function_library: dict
 ) -> pd.DataFrame:
     """Builds interactive tabbed data-editors for model bounds/initial parameters."""
     # st.header("4. Initial Parameter Editor & Bounds")
@@ -40,7 +41,7 @@ def render_parameter(
         with tab:
             ds_param_rows = []
             for c_idx, fname in enumerate(component_choices):
-                spec = FUNCTION_LIBRARY.get(fname, {})
+                spec = function_library.get(fname, {})
                 params = spec.get("params", {})
                 
                 for pname, pdefault in params.items():
@@ -115,6 +116,12 @@ def render_shared_parameters(
     same-named parameter in two different components (e.g. `sigma` in
     both a Gaussian and a Voigt component) is never tied by accident.
     """
+
+    # 1. Guard clause: Handle empty component selections
+    if not component_choices:
+        st.info("No model components selected yet. Please select a model first.")
+        return []
+    
     render_fancy_header(
         title="Shared Parameters Across Datasets",
         step_number=4,
