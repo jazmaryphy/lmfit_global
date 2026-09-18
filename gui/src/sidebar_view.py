@@ -2,24 +2,27 @@
 from __future__ import annotations
 
 import io
+import uuid
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-from gui.library import FUNCTION_LIBRARY, CONNECTORS
 from gui.demo_data import DEMO_DATASETS, make_demo_data
-from gui.src.utils import render_fancy_header, sanitize_label
+from gui.library import FUNCTION_LIBRARY, CONNECTORS, _CONNECTOR_LABELS
+
+from gui.src.utils import render_fancy_header, render_thin_divider, sanitize_label
 
 # %%
 def render_data() -> tuple[np.ndarray | None, list[str], list[str], str]:
     """Renders Sidebar section 1 and handles data extraction."""
     with st.sidebar:
         render_fancy_header(
-            "Data Input", 
+            "Data input", 
             step_number=1, 
             level=2,
             title_color="#38bdf8"
         )
+        
         source = st.radio("Data source", ["Built-in demo", "Upload file"])
         xy, y_cols = None, []
 
@@ -129,77 +132,210 @@ def render_data() -> tuple[np.ndarray | None, list[str], list[str], str]:
     return xy, dataset_labels, export_labels, source
 
 # %%
+def _remove_component_row(row_id: str) -> None:
+    """Button callback: drop a component row and its stale widget state.
+
+    Uses on_click (not an inline `if button:` check) because mutating a
+    session_state list mid-render-loop, keyed by row_id (a uuid) rather
+    than positional index, is what keeps a middle-row removal from
+    corrupting the widget state of the rows around it.
+    """
+    st.session_state.component_rows = [
+        r for r in st.session_state.component_rows if r["id"] != row_id
+    ]
+    st.session_state.pop(f"func_{row_id}", None)
+    st.session_state.pop(f"conn_{row_id}", None)
+
+# %%
 def render_model(xy: np.ndarray):
-    """Renders Sidebar sections 2 & 3: model construction (component
-    functions + connectors), the X evaluation grid, and the advanced
-    fitting settings expander (NaN policy / optimizer / log level).
+    """Renders Sidebar section 2: model construction (component functions
+    + connectors), fit range, X-eval grid, and advanced fitting settings.
+
+    Fit range and x-fine-grid are deliberately unnumbered (step_number=None)
+    and nested inside the same bordered container as Fit Model -- they are
+    sub-settings of the model step, not independent workflow stages.
 
     Returns everything app.py needs to proceed to the parameter editor
     and fit execution steps.
     """
+    x_data_min = float(np.nanmin(xy[:, 0]))
+    x_data_max = float(np.nanmax(xy[:, 0]))
+
+    # reset the grid_from/grid_to session state if the data range has changed
+    grid_data_sig = (round(x_data_min, 6), round(x_data_max, 6))
+    if st.session_state.get("_grid_data_sig") != grid_data_sig:
+        st.session_state["grid_from"] = x_data_min
+        st.session_state["grid_to"] = x_data_max
+        st.session_state["_grid_data_sig"] = grid_data_sig
+
     with st.sidebar:
-        render_fancy_header(
-            title="Model Construction",
-            step_number=2,
-            level=2,
-            title_color="#38bdf8"  # Universal Electric Blue
-        )
-        n_components = st.number_input("Number of components", min_value=1, max_value=6, value=1, step=1)
+        render_fancy_header(title="Fit Model", step_number=2, level=2, title_color="#38bdf8")
 
-        component_choices, connectors, all_selected = [], [], True
-        for i in range(n_components):
-            fname = st.selectbox(f"Component {i+1}", list(FUNCTION_LIBRARY.keys()), index=None, key=f"func_{i}")
-            if fname is None:
-                all_selected = False
-            else:
-                component_choices.append(fname)
-            if i > 0:
-                connectors.append(st.selectbox(f"Connector {i+1}", CONNECTORS, key=f"conn_{i}"))
-
-        render_fancy_header(
-            title="X-Grid",
-            step_number=3,
-            level=2,
-            title_color="#38bdf8"  # Universal Electric Blue
-        )
-        x_min_eval = st.number_input("x-min", value=float(np.nanmin(xy[:, 0])), format="%.4f")
-        x_max_eval = st.number_input("x-max", value=float(np.nanmax(xy[:, 0])), format="%.4f")
-        n_points_eval = st.number_input("numpoints (N)", min_value=50, max_value=10000, value=500, step=50)
-
-        with st.expander("Advanced Fitting Settings", expanded=False):
-            nan_policy_choice = st.selectbox(
-                "NaN Policy",
-                options=["omit", "raise", "propagate"],
-                index=0,  # Defaults to "omit" (ignores NaNs)
-                help="How to handle NaN/missing values: 'omit' ignores NaNs, 'raise' throws an error, 'propagate' returns NaN."
+        with st.container(border=True, key="fit_model_box"):
+            # Pin the icon-button columns to a fixed width so they never
+            # shrink below button size when the sidebar is narrowed, and
+            # stop the row from wrapping onto two lines.
+            st.markdown(
+                """
+                <style>
+                .st-key-fit_model_box div[data-testid="stHorizontalBlock"] {
+                    flex-wrap: nowrap !important;
+                }
+                .st-key-fit_model_box div[data-testid="column"]:has(
+                    div[data-testid="stButton"]
+                ) {
+                    flex: 0 0 44px !important;
+                    min-width: 44px !important;
+                    width: 44px !important;
+                }
+                .st-key-fit_model_box div[data-testid="column"]:has(
+                    div[data-testid="stSelectbox"]
+                ) {
+                    flex: 1 1 auto !important;
+                    min-width: 0 !important;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
             )
 
-            fit_method_choice = st.selectbox(
-                "Optimization Algorithm",
-                options=[
-                    "leastsq",       # Levenberg-Marquardt (default)
-                    "least_squares", # Least-Squares (Trust Region Reflective)
-                    "nelder",        # Nelder-Mead
-                    "powell",        # Powell
-                    "cobyla",        # COBYLA
-                    "bfgs",          # BFGS
-                    "lbfgsb",        # L-BFGS-B
-                    "cg",            # Conjugate Gradient
-                    "differential_evolution"  # Global optimization
-                ],
-                index=0,
-                help="Algorithm used by scipy.optimize / lmfit to minimize residuals."
+            if "component_rows" not in st.session_state:
+                st.session_state.component_rows = [{"id": str(uuid.uuid4())}]
+
+            MAX_COMPONENTS = 6
+            component_choices, connectors, all_selected = [], [], True
+
+            for i, row in enumerate(st.session_state.component_rows):
+                rid = row["id"]
+
+                if i == 0:
+                    col_fn, col_add = st.columns([5, 1])
+                    fname = col_fn.selectbox(
+                        "Model", list(FUNCTION_LIBRARY.keys()), index=None,
+                        key=f"func_{rid}", label_visibility="collapsed",
+                        placeholder="Select model…",
+                    )
+                    if len(st.session_state.component_rows) < MAX_COMPONENTS:
+                        col_add.button(
+                            "➕", key="add_component", help="Add another component",
+                            use_container_width=True,
+                            on_click=lambda: st.session_state.component_rows.append(
+                                {"id": str(uuid.uuid4())}
+                            ),
+                        )
+                else:
+                    col_conn, col_fn, col_rm = st.columns([1.5, 3.0, 0.6])
+                    connector = col_conn.selectbox(
+                        "Combine using",
+                        CONNECTORS,
+                        key=f"conn_{rid}",
+                        label_visibility="collapsed",
+                        format_func=lambda op: _CONNECTOR_LABELS[op],
+                        help="How this component combines with the one above it",
+                    )
+                    fname = col_fn.selectbox(
+                        "Model", list(FUNCTION_LIBRARY.keys()), index=None,
+                        key=f"func_{rid}", label_visibility="collapsed",
+                        placeholder="Select model…",
+                    )
+                    col_rm.button(
+                        "🗑️", key=f"rm_{rid}", help="Remove this component",
+                        use_container_width=True,
+                        on_click=_remove_component_row, args=(rid,),
+                    )
+                    connectors.append(connector)
+
+                if fname is None:
+                    all_selected = False
+                else:
+                    component_choices.append(fname)
+
+            n_components = len(st.session_state.component_rows)
+
+            # Fit range: sub-setting of Fit Model, no badge
+            render_thin_divider()
+            render_fancy_header(
+                title="Fit range", step_number=None,
+                title_color="#7dd3fc", title_size="0.95rem",
+                title_margin="0.2rem 0 0.15rem",
+            )
+            col_from, col_to = st.columns(2)
+            x_min_fit = col_from.number_input(
+                "From", value=x_data_min,
+                min_value=x_data_min, max_value=x_data_max,
+                format="%.4f",
+            )
+            x_max_fit = col_to.number_input(
+                "To", value=x_data_max,
+                min_value=x_data_min, max_value=x_data_max,
+                format="%.4f",
+            )
+            if x_min_fit >= x_max_fit:
+                st.warning(
+                    f"⚠️ Fit range 'From' ({x_min_fit:.4f}) must be less than "
+                    f"'To' ({x_max_fit:.4f}). Swapping them for the fit."
+                )
+                x_min_fit, x_max_fit = x_max_fit, x_min_fit
+
+            # x-fine-grid: sub-setting of Fit Model, no badge 
+            render_thin_divider()
+            render_fancy_header(
+                title="Fine grid", step_number=None,
+                title_color="#7dd3fc", title_size="0.95rem",
+                title_margin="0.2rem 0 0.15rem",
+            )
+            col_gmin, col_gmax, col_gn = st.columns(3)
+            x_min_eval = col_gmin.number_input(
+                "From", value=x_data_min, format="%.4f", key="grid_from"
+            )
+            x_max_eval = col_gmax.number_input(
+                "To", value=x_data_max, format="%.4f", key="grid_to"
+            )
+            n_points_eval = col_gn.number_input(
+                "N", min_value=50, max_value=10000, value=500, step=50, key="grid_n"
             )
 
-            log_level_choice = st.selectbox(
-                "Logging Level",
-                options=["warning", "info", "debug", "error"],
-                index=0,
-                help="Console/logger verbosity level."
+        with st.container(key="fit_settings_box"):
+            st.markdown(
+                """
+                <style>
+                .st-key-fit_settings_box div[data-testid="stExpander"] summary p {
+                    color: #ff4b4b !important;
+                    font-weight: 700 !important;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
             )
+
+            with st.expander("⚙️ Fit settings", expanded=False):
+                nan_policy_choice = st.selectbox(
+                    "NaN Policy",
+                    options=["omit", "raise", "propagate"],
+                    index=0,
+                    # help="How to handle NaN/missing values.",
+                    help=f"How to handle NaN/missing values: "
+                        f"'omit' ignores NaNs, 'raise' throws an error, 'propagate' returns NaN.",
+                )
+                fit_method_choice = st.selectbox(
+                    "Optimization Algorithm",
+                    options=[
+                        "leastsq", "least_squares", "nelder", "powell",
+                        "cobyla", "bfgs", "lbfgsb", "cg", "differential_evolution",
+                    ],
+                    index=0,
+                    help="Algorithm used by scipy.optimize / lmfit to minimize residuals.",
+                )
+                log_level_choice = st.selectbox(
+                    "Logging Level",
+                    options=["warning", "info", "debug", "error"],
+                    index=0,
+                    help="Console/logger verbosity level.",
+                )
 
     return (
         n_components, component_choices, connectors, all_selected,
+        x_min_fit, x_max_fit,
         x_min_eval, x_max_eval, n_points_eval,
         nan_policy_choice, fit_method_choice, log_level_choice,
     )

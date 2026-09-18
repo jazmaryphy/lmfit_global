@@ -14,6 +14,13 @@ import lmfit_global.utils.lineshapes as ls
 # Connector options for multi-component model building
 CONNECTORS = ["+", "-", "*", "/"]
 
+_CONNECTOR_LABELS = {
+    "+": "+  (add)", 
+    "-": "-  (subtract)", 
+    "*": "×  (multiply)", 
+    "/": "÷  (divide)",
+}
+
 # %%
 # Custom Metadata Overrides (for bounds, defaults, display names)
 # Functions in lineshapes.py that take non-standard required arguments 
@@ -77,9 +84,7 @@ EXCLUDED_FUNCTIONS = {
 }
 
 
-# ----------------------------------------------------------------------
-# 2. Dynamic Inspection & Library Builder
-# ----------------------------------------------------------------------
+# Dynamic Inspection & Library Builder
 def build_function_library():
     """
     Inspects all callable functions inside `lineshapes.py` and returns 

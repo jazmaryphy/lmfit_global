@@ -4,14 +4,13 @@ from __future__ import annotations
 import numpy as np
 import streamlit as st
 
-from gui.library import FUNCTION_LIBRARY
 from gui.src.plot_view import render_plot
 from gui.src.export_view import render_export
-from gui.src.fit_runner import run_global_fit
-from gui.src.parameter_view import render_parameter
+from gui.src.fit_view import render_fit_execution
 from gui.src.sidebar_view import render_data, render_model
+from gui.src.parameter_view import render_parameter, render_shared_parameters
 
-from gui.src.utils import render_fancy_header
+from gui.src.utils import invalidate_stale_fit_state
 
 # %%
 # Page Configuration
@@ -37,18 +36,13 @@ if xy is None or xy.shape[1] <= 1:
 
 ny = xy.shape[1] - 1
 
-# Invalidate stale fit state if data signature changes
-data_sig = (xy.shape, float(np.nansum(xy)))
-if st.session_state.get("_data_signature") != data_sig:
-    st.session_state.pop("fitted_lg", None)
-    st.session_state["_data_signature"] = data_sig
-
 # %%
 ### SIDEBAR VIEW
 # MODEL: construction, x-grid, advanced fitting settings
 #
 (
     n_components, component_choices, connectors, all_selected,
+    x_min_fit, x_max_fit,
     x_min_eval, x_max_eval, n_points_eval,
     nan_policy_choice, fit_method_choice, log_level_choice,
 ) = render_model(xy)
@@ -56,6 +50,13 @@ if st.session_state.get("_data_signature") != data_sig:
 if not all_selected:
     st.info("Please choose a function for every component in the sidebar.")
     st.stop()
+
+# Invalidate stale fit/preview state if the data OR the model/fit-range
+# changes -- both checked together so a stale result can't survive
+# either kind of change without the user noticing it's gone.
+data_sig = (xy.shape, float(np.nansum(xy)))
+model_sig = (tuple(component_choices), tuple(connectors), x_min_fit, x_max_fit)
+invalidate_stale_fit_state(data_sig, model_sig)
 
 # %%
 ### MAIN VIEW
@@ -67,98 +68,62 @@ param_df = render_parameter(xy, component_choices)
 ### MAIN VIEW
 # GLOBAL PARAMETERS: global links between parameters (EXPERIMENTAL)
 #
-global_param_bases = []
+global_param_selections: list[tuple[int, str]] = []
 if ny > 1:
-    render_fancy_header(
-        title="Shared Parameters Across Datasets",
-        step_number=5,
-        level=2,
-        title_color="#38bdf8"  # Universal Electric Blue
-    )
-    unique_params = sorted(set(param_df["Parameter"].tolist()))
-    global_param_bases = st.multiselect("Select base parameters to link globally:", unique_params)
+    global_param_selections = render_shared_parameters(param_df, component_choices)
 
 # %%
 ### MAIN VIEW
 # FIT EXECUTION
 #
-render_fancy_header(
-    title="Optimization & Results",
-    step_number=6,
-    level=2,
-    title_color="#38bdf8"
+render_fit_execution(
+    xy=xy,
+    param_df=param_df,
+    component_choices=component_choices,
+    connectors=connectors,
+    global_param_selections=global_param_selections,
+    ny=ny,
+    n_components=n_components,
+    nan_policy_choice=nan_policy_choice,
+    fit_method_choice=fit_method_choice,
+    log_level_choice=log_level_choice,
+    x_min_fit=x_min_fit,
+    x_max_fit=x_max_fit,
+    n_points_eval=n_points_eval,
 )
-
-st.markdown(
-    """
-    <style>
-    /* Target the primary button container */
-    div.stButton > button[kind="primary"] {
-        background-color: #ff4b4b !important; /* Optional: Customize red button color */
-        padding: 18px 28px !important;
-        min-height: 65px !important;
-        border: none !important;
-        border-radius: 10px !important;
-        width: 100% !important;
-    }
-
-    /* Target the text and emoji inside the button */
-    div.stButton > button[kind="primary"] p,
-    div.stButton > button[kind="primary"] span {
-        font-size: 26px !important;
-        font-weight: 800 !important;
-        color: #ffffff !important;           /* High contrast white text */
-        text-shadow: 0px 1px 2px rgba(0, 0, 0, 0.4); /* Optional: Adds subtle pop against bright background */
-        line-height: 1.2 !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-runfit_str = "🚀 Run Fit Optimization"
-
-if st.button(
-    runfit_str,
-    type="primary",
-    use_container_width=True,
-):
-    with st.spinner("⚡ Running fit, please wait..."):
-        try:
-            lg, report_text = run_global_fit(
-                xy=xy,
-                param_df=param_df,
-                component_choices=component_choices,
-                connectors=connectors,
-                global_param_bases=global_param_bases,
-                ny=ny,
-                n_components=n_components,
-                function_library=FUNCTION_LIBRARY,
-                nan_policy_choice=nan_policy_choice,
-                fit_method_choice=fit_method_choice,
-                log_level_choice=log_level_choice,
-            )
-
-            st.session_state["fitted_lg"] = lg
-            st.session_state["report_text"] = report_text
-
-            st.success("Optimization completed successfully.")
-
-        except Exception as e:
-            st.error(f"Fit failed: {e}")
 
 # %%
 ### MAIN VIEW
-# PLOT & EXPORT
+# FIT REPORT, PLOT & EXPORT
 #
 if "fitted_lg" in st.session_state:
     lg = st.session_state["fitted_lg"]
     report_text = st.session_state["report_text"]
 
-    fig, fitdata, x_model_custom, dpi_val = render_plot(
+    just_fit = st.session_state.pop("_just_fit", False)
+    just_fit = False  # DEBUG: always expand fit report for now
+
+    with st.container(key="fit_report_box"):
+        st.markdown(
+            """
+            <style>
+            .st-key-fit_report_box div[data-testid="stExpander"] summary p,
+            .st-key-fit_report_box div[data-testid="stExpander"] summary span {
+                color: #ff4b4b !important;
+                font-weight: 700 !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        text_str = "Fit report"
+        text_str = "📄 Fit report"
+        with st.expander(text_str, expanded=just_fit):
+            st.code(report_text, language="text")
+
+    fig, fitdata, x_model_custom = render_plot(
         lg=lg,
-        report_text=report_text,
-        xy=xy,
         ny=ny,
         dataset_labels=dataset_labels,
         component_choices=component_choices,
@@ -177,6 +142,5 @@ if "fitted_lg" in st.session_state:
         component_choices=component_choices,
         report_text=report_text,
         fig=fig,
-        dpi_val=dpi_val,
         source=source,
     )

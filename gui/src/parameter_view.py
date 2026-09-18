@@ -9,13 +9,16 @@ from gui.library import FUNCTION_LIBRARY
 from gui.src.utils import render_fancy_header
 
 # %%
-def render_parameter(xy: np.ndarray, component_choices: list[str]) -> pd.DataFrame:
+def render_parameter(
+    xy: np.ndarray, 
+    component_choices: list[str]
+) -> pd.DataFrame:
     """Builds interactive tabbed data-editors for model bounds/initial parameters."""
     # st.header("4. Initial Parameter Editor & Bounds")
     # st.caption("Edit value / bounds / vary flag for each component's parameters.")
     render_fancy_header(
         "Initial Parameter Editor & Bounds", 
-        step_number=4, 
+        step_number=3, 
         subtitle="Edit values, min/max bounds, and vary flags for each component.", 
         level=2,
         title_color="#38bdf8"  # Universal Electric Blue
@@ -63,7 +66,7 @@ def render_parameter(xy: np.ndarray, component_choices: list[str]) -> pd.DataFra
                         "Value": ds_val,
                         "Vary": pdefault.get("vary", True) if is_num else False,
                         "Min": float(pdefault.get("min", -np.inf)) if is_num else -np.inf,
-                        "Max": float(pdefault.get("max", np.inf)) if is_num else np.inf
+                        "Max": float(pdefault.get("max", +np.inf)) if is_num else +np.inf
                     })
 
             # Explicitly enforce column structure even if ds_param_rows is empty
@@ -95,3 +98,104 @@ def render_parameter(xy: np.ndarray, component_choices: list[str]) -> pd.DataFra
             edited_dfs.append(pd.concat([edited_numeric, ds_df[~is_numeric]], ignore_index=True))
 
     return pd.concat(edited_dfs, ignore_index=True) if edited_dfs else pd.DataFrame(columns=columns)
+
+# %%
+def render_shared_parameters(
+    param_df: pd.DataFrame,
+    component_choices: list[str],
+) -> list[tuple[int, str]]:
+    """Renders per-component 'share across datasets' tables inside tabs
+    -- one tab per component, mirroring how Initial Parameter Editor
+    uses one tab per dataset. Only the active tab's table is visible at
+    a time, instead of stacking every component's table on the page.
+
+    Returns a list of (component_id, parameter_name) pairs the user
+    explicitly opted to tie globally. Selection is scoped to
+    (component_id, parameter_name) -- not parameter_name alone -- so a
+    same-named parameter in two different components (e.g. `sigma` in
+    both a Gaussian and a Voigt component) is never tied by accident.
+    """
+    render_fancy_header(
+        title="Shared Parameters Across Datasets",
+        step_number=4,
+        level=2,
+        title_color="#38bdf8",
+        # subtitle=(
+        #     "Selections are per component: checking a parameter here ties "
+        #     "it only within that component, even if another component has "
+        #     "a parameter with the same name."
+        # ),
+        subtitle="Check a parameter to fit it as one shared value across all datasets.",
+    )
+
+    global_param_selections: list[tuple[int, str]] = []
+    fixed_but_shared_all: list[str] = []
+
+    comp_tabs = st.tabs([f"Comp {c_idx + 1}: {fname}" for c_idx, fname in enumerate(component_choices)])
+
+    for c_idx, (fname, tab) in enumerate(zip(component_choices, comp_tabs)):
+        with tab:
+            comp_rows = param_df[
+                (param_df["Component_ID"] == c_idx) & (param_df["Dataset_ID"] == 0)
+            ]
+            if comp_rows.empty:
+                st.info("No parameters found for this component.")
+                continue
+
+            vary_by_param = dict(zip(comp_rows["Parameter"], comp_rows["Vary"]))
+            comp_params = sorted(vary_by_param)
+
+            share_df = pd.DataFrame({
+                "Parameter": comp_params,
+                "Share": False,
+                "Fixed": [not vary_by_param[p] for p in comp_params],
+            })
+
+            edited = st.data_editor(
+                share_df,
+                column_config={
+                    "Parameter": st.column_config.TextColumn("Parameter", disabled=True),
+                    "Share": st.column_config.CheckboxColumn("Share across datasets", default=False),
+                    "Fixed": None,
+                },
+                hide_index=True,
+                width="stretch",
+                key=f"share_editor_c{c_idx}",
+            )
+
+            shared_rows = edited[edited["Share"]]
+            global_param_selections.extend((c_idx, p) for p in shared_rows["Parameter"])
+
+            fixed_but_shared = shared_rows.loc[shared_rows["Fixed"], "Parameter"].tolist()
+            if fixed_but_shared:
+                fixed_but_shared_all.extend(
+                    f"Comp {c_idx + 1}.{p}" for p in fixed_but_shared
+                )
+                plural = len(fixed_but_shared) != 1
+                st.warning(
+                    f"⚠️ {', '.join(fixed_but_shared)} {'are' if plural else 'is'} "
+                    f"fixed (Vary unchecked) in Dataset 1 — sharing will have no "
+                    f"effect unless you also enable Vary."
+                )
+
+    # if global_param_selections:
+    #     st.caption(
+    #         "Will link: " + ", ".join(
+    #             f"Component {c + 1}.{p}" for c, p in global_param_selections
+    #         )
+    #     )
+
+    # if global_param_selections:
+    #     st.markdown("---")
+    #     if len(global_param_selections) == 1:
+    #         c, p = global_param_selections[0]
+    #         st.info(f"🔗 **Comp {c + 1}.{p}** will share one fitted value across all datasets.")
+    #     else:
+    #         entries = "\n".join(f"- **Comp {c + 1}.{p}**" for c, p in global_param_selections)
+    #         st.info(f"🔗 These parameters will share one fitted value across all datasets:\n\n{entries}")
+
+    if global_param_selections:
+        entries = ", ".join(f"**Comp {c + 1}.{p}**" for c, p in global_param_selections)
+        st.info(f"🔗 Shared across all datasets: {entries}")
+
+    return global_param_selections

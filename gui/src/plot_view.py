@@ -10,8 +10,6 @@ from gui.src.utils import component_label, render_fancy_header
 # %%
 def render_plot(
     lg,
-    report_text: str,
-    xy: np.ndarray,
     ny: int,
     dataset_labels: list[str],
     component_choices: list[str],
@@ -19,26 +17,33 @@ def render_plot(
     x_max_eval: float,
     n_points_eval: int,
 ):
-    """Renders the fit report, the plot display controls, and the fit
-    figure itself (data + fit + optional residuals + component overlay).
+    """Renders the plot display controls and the fit figure itself
+    (data + fit + optional residuals + component overlay).
 
     Returns:
         (fig, fitdata, x_model_custom, dpi_val) -- everything the export
         section needs afterward.
     """
-    render_fancy_header("Fit Report", level=3)
-    st.code(report_text, language="text")
-
-    # Display Controls
-    vcol1, vcol2, vcol3, vcol4 = st.columns(4)
-    show_res = vcol1.checkbox("Show Residuals", value=False)
-    dpi_val = vcol2.number_input("DPI Resolution", min_value=100, max_value=600, value=100, step=50)
-    show_m_leg = vcol3.checkbox("Show legend", value=True)
-    show_r_leg = vcol4.checkbox(
-        "Show residual legend", value=False,
-        disabled=not show_res,
-        help="Only applies when 'Show Residuals Plot' is enabled.",
+    render_fancy_header(
+        title="Plot settings", step_number=None,
+        title_color="#7dd3fc", title_size="0.95rem",
+        title_margin="0.1rem 0 0.4rem",
     )
+
+    with st.container(border=True):
+        # Residuals + DPI first (structural choices), legend pair last and
+        # adjacent to each other since "show residual legend" only makes
+        # sense in the context of "show legend" / "show residuals".
+        # vcol1, vcol2, vcol3, vcol4 = st.columns([1, 1, 1, 1])
+        vcol1, vcol2, vcol3 = st.columns(3)
+
+        show_m_leg = vcol1.checkbox("🏷️ Show legend", value=True)
+        show_res = vcol2.checkbox("📉 Show residuals", value=False)
+        show_r_leg = vcol3.checkbox(
+            "🏷️ Show residual legend", value=False,
+            disabled=not show_res,
+            help="Only applies when 'Show Residuals' is enabled.",
+        )
 
     # Re-evaluate internal model grid for current resolution
     if x_max_eval <= x_min_eval:
@@ -56,9 +61,9 @@ def render_plot(
     plotter = FitPlotter(fitdata)
 
     pretty_kw = {
-        "width": 6.0,
-        "height": 6.0 if show_res else 5.5,
-        "dpi": dpi_val
+        "width": 8.0,
+        "height": 5.0 if show_res else 5.0,
+        "dpi": 100
     }
 
     ax_main, ax_res, fig = plotter.make_axes(
@@ -112,18 +117,29 @@ def render_plot(
     if show_m_leg:
         MAX_LEGEND_ENTRIES = 20
         handles, labels = ax_main.get_legend_handles_labels()
+        legend_kws = dict(
+            loc="best", frameon=True, edgecolor="black",
+            fontsize="small", markerscale=0.8,
+            ncol=2 if len(labels) > 6 else 1,
+        )
         if len(labels) > MAX_LEGEND_ENTRIES:
+            # ax_main.legend(
+            #     handles[:MAX_LEGEND_ENTRIES], labels[:MAX_LEGEND_ENTRIES],
+            #     loc="best", frameon=True, edgecolor="black", fontsize="small",
+            #     title=f"showing {MAX_LEGEND_ENTRIES}/{len(labels)} entries"
+            # )
             ax_main.legend(
                 handles[:MAX_LEGEND_ENTRIES], labels[:MAX_LEGEND_ENTRIES],
-                loc="best", frameon=True, edgecolor="black", fontsize="small",
-                title=f"showing {MAX_LEGEND_ENTRIES}/{len(labels)} entries"
+                title=f"showing {MAX_LEGEND_ENTRIES}/{len(labels)} entries",
+                **legend_kws,
             )
         else:
-            ax_main.legend(loc="best", frameon=True, edgecolor="black")
+            # ax_main.legend(loc="best", frameon=True, edgecolor="black")
+            ax_main.legend(**legend_kws)
     elif ax_main.get_legend() is not None:
         ax_main.get_legend().remove()
 
     fig.tight_layout()
     st.pyplot(fig, width="stretch")
 
-    return fig, fitdata, x_model_custom, dpi_val
+    return fig, fitdata, x_model_custom
